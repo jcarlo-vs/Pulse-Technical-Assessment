@@ -17,7 +17,7 @@ const VALID_TYPES: SignalType[] = [
 
 const MAX_PAYLOAD = 64 * 1024; // SDP/ICE are small; cap to be safe.
 
-// POST /api/signal — body { fromId, toId, type, payload? }
+// POST /api/signal - body { fromId, toId, type, payload? }
 // Drops one message into the recipient's mailbox. Also manages the `busy`
 // flag so a user can only be in one connection at a time.
 export async function POST(request: NextRequest) {
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       select: { busy: true },
     });
     if (!target) {
-      // Target went offline — tell the initiator it was declined.
+      // Target went offline - tell the initiator it was declined.
       await sendDecline(toId, fromId);
       return Response.json({ ok: true, autoDeclined: true });
     }
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       where: { id: { in: [fromId, toId] } },
       data: { busy: true },
     });
-  } else if (signalType === "decline") {
+  } else if (signalType === "decline" || signalType === "end") {
     await prisma.presence.updateMany({
       where: { id: { in: [fromId, toId] } },
       data: { busy: false },
