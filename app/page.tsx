@@ -20,7 +20,7 @@ import {
 } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
-import { countryCode, distanceKm, formatDistance, placeName } from "@/lib/geo";
+import { countryCode, countryLabel, distanceKm, formatDistance, placeName } from "@/lib/geo";
 import { startRing } from "@/lib/ring";
 import { type Glance, type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
@@ -88,6 +88,9 @@ export default function Home() {
   const myCountry = useRef("");
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [found, setFound] = useState<string | null>(null);
+  const [scan, setScan] = useState<"idle" | "scanning" | "empty">("idle");
+  const scanTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const peersRef = useRef<PeerDot[]>([]);
   // Phones: chat opens as a sheet over the video (desktop shows it beside).
   const [chatOverVideo, setChatOverVideo] = useState(false);
   const [unread, setUnread] = useState(false);
@@ -308,8 +311,18 @@ export default function Home() {
 
   // "Find someone": preview a random free match within the current vibe
   // filter; the user then says hello or skips to the next one.
+  // "Find someone" always works: a short search, then either a match
+  // preview or an honest "no one's around". Reads peers through a ref, since
+  // the list may change while it searches.
   function findSomeone() {
-    const free = peers.filter(
+    setFound(null);
+    setScan("scanning");
+    clearTimeout(scanTimer.current);
+    scanTimer.current = setTimeout(pickSomeone, 1500);
+  }
+
+  function pickSomeone() {
+    const free = peersRef.current.filter(
       (p) =>
         !p.busy &&
         (!filter || p.vibe === filter) &&
@@ -321,9 +334,15 @@ export default function Home() {
       pool = free;
     }
     const pick = pool[Math.floor(Math.random() * pool.length)];
-    if (!pick) return setFound(null);
+    if (!pick) return setScan("empty");
+    setScan("idle");
     setFocus({ lat: pick.lat, lng: pick.lng });
     setFound(pick.id);
+  }
+
+  function stopScan() {
+    clearTimeout(scanTimer.current);
+    setScan("idle");
   }
 
   function skipFound() {
@@ -488,6 +507,7 @@ export default function Home() {
           }
         } else {
           setPeers(data.peers);
+          peersRef.current = data.peers;
           for (const s of data.signals) processSignalRef.current(s);
         }
       } catch {}
@@ -580,6 +600,12 @@ export default function Home() {
   const peerId = conn.kind === "idle" ? null : conn.peerId;
   const peerVibe = vibeOf(peers.find((p) => p.id === peerId)?.vibe);
   const color = peerVibe.color;
+  const searchLabel = [
+    filter ? `Into ${vibeOf(filter).label.toLowerCase()}` : "",
+    countryFilter ? `in ${countryLabel(countryFilter)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ") || "Anyone who matches you";
   const shown = peers.filter(
     (p) => (!filter || p.vibe === filter) && (!countryFilter || p.country === countryFilter),
   );
@@ -623,7 +649,7 @@ export default function Home() {
       )}
 
       {live && !inChat && (
-        <ThemePicker className="glass anim-fade absolute bottom-40 left-4 z-10 flex-col rounded-full p-1 md:bottom-24" />
+        <ThemePicker className="glass anim-fade absolute bottom-24 left-4 z-10 hidden flex-col rounded-full p-1 md:flex" />
       )}
 
       {live && !inChat && (
@@ -636,17 +662,18 @@ export default function Home() {
         />
       )}
 
-      {live && conn.kind === "idle" && !found && (
-        <div className="anim-rise absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+3.25rem)] left-1/2 z-10 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2">
-          {available > 0 && (
-            <button
-              onClick={findSomeone}
-              className="btn-primary flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
-            >
-              <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
-              {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
-            </button>
-          )}
+      {live && conn.kind === "idle" && !found && scan === "idle" && (
+        // One column, so the buttons and the hint can never overlap,
+        // whatever the screen width or how the hint wraps.
+        <div className="anim-rise absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 z-10 flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 flex-col items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            onClick={findSomeone}
+            className="btn-primary flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
+          >
+            <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
+            {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
+          </button>
           <div
             role="radiogroup"
             aria-label="Looking for"
@@ -667,6 +694,76 @@ export default function Home() {
               </button>
             ))}
           </div>
+          </div>
+          <p className="glass pointer-events-none max-w-full rounded-full px-4 py-2 text-center text-xs text-ink-dim sm:text-sm">
+            {shown.length === 0
+              ? filter
+                ? `Nobody's feeling ${vibeOf(filter).emoji} right now. Try another vibe.`
+                : "It's quiet right now. Your dot is live, so someone may find you."
+              : available === 0
+                ? "Everyone's mid-conversation. Hang tight."
+                : "Or tap any glowing dot to say hello"}
+          </p>
+        </div>
+      )}
+
+      {live && conn.kind === "idle" && scan !== "idle" && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="glass-strong anim-rise absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-3xl p-5"
+        >
+          {scan === "scanning" ? (
+            <div className="flex items-center gap-4">
+              <span className="radar relative grid size-12 shrink-0 place-items-center rounded-full">
+                <span className="size-3.5 rounded-full bg-accent shadow-[0_0_14px_var(--accent)]" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">Looking for someone…</p>
+                <p className="truncate text-sm text-ink-dim">{searchLabel}</p>
+              </div>
+              <button onClick={stopScan} className="btn-ghost h-10 rounded-full px-4 text-sm">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-4">
+                <span className="grid size-12 shrink-0 place-items-center rounded-full bg-white/[0.06] text-2xl" aria-hidden="true">
+                  🌙
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">No one&rsquo;s around right now</p>
+                  <p className="mt-0.5 text-sm text-ink-dim">
+                    {filter || countryFilter
+                      ? `Nobody ${searchLabel.toLowerCase()} is free at the moment.`
+                      : "Nobody is free to chat at the moment."}{" "}
+                    Your dot is live, so someone may find you.
+                  </p>
+                </div>
+                <button onClick={stopScan} aria-label="Close" className="btn-ghost grid size-9 shrink-0 place-items-center rounded-full">
+                  <CloseIcon width={16} height={16} />
+                </button>
+              </div>
+              <div className="mt-4 flex gap-2">
+                {(filter || countryFilter) && (
+                  <button
+                    onClick={() => {
+                      setFilter(null);
+                      setCountryFilter(null);
+                      stopScan();
+                    }}
+                    className="btn-ghost h-11 flex-1 rounded-full text-sm font-medium"
+                  >
+                    Clear filters
+                  </button>
+                )}
+                <button onClick={findSomeone} className="btn-primary h-11 flex-1 rounded-full text-sm">
+                  Try again
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -714,17 +811,6 @@ export default function Home() {
         </div>
       )}
 
-      {live && conn.kind === "idle" && !found && (
-        <p className="glass anim-rise pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-sm text-ink-dim">
-          {shown.length === 0
-            ? filter
-              ? `Nobody's feeling ${vibeOf(filter).emoji} right now. Try another vibe.`
-              : "It's quiet right now. Your dot is live, so someone may find you."
-            : available === 0
-              ? "Everyone's mid-conversation. Hang tight."
-              : "Or tap any glowing dot to say hello"}
-        </p>
-      )}
 
       {notice && (
         <div

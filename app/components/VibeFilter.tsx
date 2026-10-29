@@ -36,7 +36,9 @@ export default function VibeFilter({
       className="anim-fade absolute inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-20 flex items-center gap-1.5 px-4 md:top-4 md:justify-center md:px-48"
     >
       <CountryPicker peers={peers} value={country} onChange={onCountry} />
-      <div className="flex min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none]">
+      {/* Phones: one dropdown with names instead of a row of icons. */}
+      <VibePicker value={value} onChange={onChange} count={count} total={inCountry.length} />
+      <div className="hidden min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] md:flex">
         <Chip active={value === null} onClick={() => onChange(null)} count={inCountry.length}>
           All
         </Chip>
@@ -58,6 +60,91 @@ export default function VibeFilter({
         })}
       </div>
     </nav>
+  );
+}
+
+function VibePicker({
+  value,
+  onChange,
+  count,
+  total,
+}: {
+  value: VibeId | null;
+  onChange: (v: VibeId | null) => void;
+  count: (id: VibeId) => number;
+  total: number;
+}) {
+  const [state, setState] = useState<"closed" | "open" | "closing">("closed");
+  const open = state === "open";
+  const close = () => {
+    setState("closing");
+    setTimeout(() => setState("closed"), 150);
+  };
+  const pick = (v: VibeId | null) => {
+    onChange(v);
+    close();
+  };
+  const current = VIBES.find((v) => v.id === value);
+  const options = [
+    { id: null, emoji: "✨", label: "All vibes", n: total, color: "var(--accent)" },
+    ...VIBES.map((v) => ({ id: v.id, emoji: v.emoji, label: v.label, n: count(v.id), color: v.color })),
+  ];
+
+  return (
+    <div className="relative min-w-0 md:hidden">
+      <button
+        type="button"
+        onClick={() => (open ? close() : setState("open"))}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Vibe: ${current?.label ?? "All vibes"}`}
+        className="flex h-9 max-w-full items-center gap-1.5 rounded-full border bg-[var(--glass-strong)] px-3 text-sm shadow-lg"
+        style={{ borderColor: current ? current.color : "var(--line)" }}
+      >
+        <span aria-hidden="true">{current?.emoji ?? "✨"}</span>
+        <span className="truncate">{current?.label ?? "All vibes"}</span>
+        <span className="rounded-full bg-white/[0.08] px-1.5 text-[11px] font-semibold tabular-nums leading-5">
+          {current ? count(current.id) : total}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`shrink-0 text-ink-faint transition ${open ? "rotate-180" : ""}`} aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {state !== "closed" && (
+        <>
+          <button type="button" aria-label="Close" className="fixed inset-0 z-10 cursor-default" onClick={close} />
+          <ul
+            role="listbox"
+            aria-label="Vibe"
+            className={`glass-strong scroll-slim absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl p-1.5 text-sm ${open ? "menu-in" : "menu-out"}`}
+          >
+            {options.map((o) => {
+              const active = value === o.id;
+              return (
+                <li key={o.id ?? "all"}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => pick(o.id)}
+                    className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/10 ${active ? "bg-white/10" : ""} ${o.n === 0 && !active ? "text-ink-faint" : ""}`}
+                  >
+                    <span aria-hidden="true">{o.emoji}</span>
+                    <span className="truncate">{o.label}</span>
+                    <span
+                      className="ml-auto rounded-full px-2 text-xs tabular-nums"
+                      style={{ background: active ? o.color : "rgba(255,255,255,0.07)", color: active ? "#0b0b0c" : undefined }}
+                    >
+                      {o.n}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
