@@ -1,5 +1,9 @@
 # Pulse — Take-Home Assessment
 
+> **Submission:** live at **https://juan-carlo-senin-pulse-letsgo.vercel.app** ·
+> write-up per phase in **[NOTES.md](NOTES.md)**. The original brief follows
+> unchanged.
+
 Welcome, and thanks for taking the time. **Pulse** is a working (mostly!) Next.js
 app: a living globe of anonymous strangers — every online user is a dot on a world
 map; tap one to connect for text chat or a video call. No accounts, no history,
