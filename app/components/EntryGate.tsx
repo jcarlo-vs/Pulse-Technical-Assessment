@@ -29,6 +29,8 @@ export default function EntryGate({
   const [seeking, setSeeking] = useState<Seeking>(DEFAULT_SEEKING);
   const [status, setStatus] = useState<"idle" | "locating" | "error">("idle");
   const [error, setError] = useState<string>("");
+  // Blocked location: browsers never re-ask, so show device-specific steps.
+  const [denied, setDenied] = useState(false);
   // geolocation waits indefinitely on an unanswered permission prompt (the
   // timeout only starts after it's granted), and some browsers show that
   // prompt as a tiny address-bar icon. Explain instead of spinning silently.
@@ -42,9 +44,10 @@ export default function EntryGate({
     };
   }, [status]);
 
-  function fail(message: string) {
+  function fail(message: string, blocked = false) {
     setStatus("error");
     setError(message);
+    setDenied(blocked);
   }
 
   function enter() {
@@ -63,10 +66,10 @@ export default function EntryGate({
           fail("Couldn't reach Pulse. Check your connection and try again."),
         ),
       (err) =>
-        fail(
-          err.code === err.PERMISSION_DENIED
-            ? "Location permission is needed to place your dot. Enable it in your browser's site settings, then try again."
-            : "Couldn't get your location. Please try again.",
+        err.code === err.PERMISSION_DENIED
+          ? fail("", true)
+          : fail(
+              "We couldn't find you. Make sure Location is turned on for your device, then try again.",
         ),
       // High accuracy + maximumAge:0 forces a fresh fix (Wi-Fi/GPS scan)
       // instead of reusing the browser's cached IP-based location.
@@ -85,16 +88,17 @@ export default function EntryGate({
     <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,color-mix(in_srgb,var(--bg)_97%,transparent)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
       {counts && <Activity counts={counts} />}
       <div className="w-full md:flex md:max-w-[1320px] md:justify-end">
-      <div className="anim-rise pointer-events-auto max-h-[100dvh] w-full overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:w-[min(600px,48vw)] md:flex-col md:justify-center md:rounded-[32px] md:border md:border-line md:bg-[var(--panel)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:px-12 md:py-10 md:backdrop-blur-xl">
+      <div className="anim-rise pointer-events-auto w-full md:w-[min(600px,48vw)] md:overflow-hidden md:rounded-[32px] md:border md:border-line md:bg-[var(--panel)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:backdrop-blur-xl">
+      <div className="scroll-slim max-h-[100dvh] overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:flex-col md:justify-center md:px-12 md:py-10 md:[&>*]:shrink-0 short:md:py-6">
         <div className="flex items-center justify-between gap-3">
           <Wordmark />
           <ThemePicker />
         </div>
-        <h2 className="mt-3 text-balance text-[24px] font-semibold sm:mt-4 sm:text-[28px] leading-[1.1] tracking-tight md:mt-6 md:text-[44px]">
+        <h2 className="mt-3 text-balance text-[24px] font-semibold sm:mt-4 sm:text-[28px] leading-[1.1] tracking-tight md:mt-6 md:text-[44px] short:md:mt-3 short:md:text-[34px] tiny:md:text-[28px]">
           Talk to someone, somewhere, right now.
         </h2>
 
-        <ol className="mt-4 space-y-3.5 sm:mt-6 sm:space-y-5 md:mt-8">
+        <ol className="mt-4 space-y-3.5 sm:mt-6 sm:space-y-5 md:mt-8 short:md:mt-4 short:md:space-y-3">
           <Step n={1} active title="Pick your vibe" text="So people know what you're up for before they tap.">
             <fieldset className="mt-3">
               <legend className="sr-only">Your vibe</legend>
@@ -107,7 +111,7 @@ export default function EntryGate({
                       type="button"
                       onClick={() => setVibe(v.id)}
                       aria-pressed={active}
-                      className="glass flex h-10 items-center gap-2 rounded-2xl px-3 text-left text-[13px] sm:h-11 transition hover:bg-white/10"
+                      className="glass flex h-10 items-center gap-2 rounded-2xl px-3 text-left text-[13px] sm:h-11 short:sm:h-9 transition hover:bg-white/10"
                       style={
                         active
                           ? {
@@ -130,18 +134,18 @@ export default function EntryGate({
             </fieldset>
           </Step>
           <Step n={2} phone title="Who you'd like to talk to" text="Only people who'd also pick you can see your dot. Never shown to anyone, not verified.">
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 short:sm:mt-2">
               <Segmented label="I am" options={GENDERS} value={gender} onChange={setGender} />
               <Segmented label="Talk to" options={SEEKING} value={seeking} onChange={setSeeking} />
             </div>
           </Step>
-          <Step n={3} title="Drop in and say hello" text="Your dot lands near you, never on your exact spot. Chat first; video starts blurred." />
+          <Step n={3} className="tiny:sm:hidden" title="Drop in and say hello" text="Your dot lands near you, never on your exact spot. Chat first; video starts blurred." />
         </ol>
 
         <button
           onClick={enter}
           disabled={status === "locating"}
-          className="mt-5 inline-flex h-13 w-full sm:mt-7 sm:h-14 items-center justify-center gap-2 rounded-full px-8 text-base font-semibold text-[var(--accent-ink)] transition hover:brightness-110 disabled:opacity-70 md:w-auto md:self-start"
+          className="mt-5 inline-flex h-13 w-full shrink-0 sm:mt-7 sm:h-14 short:sm:mt-4 short:sm:h-12 items-center justify-center gap-2 rounded-full px-8 text-base font-semibold text-[var(--accent-ink)] transition hover:brightness-110 disabled:opacity-70 md:w-auto md:self-start"
           style={{
             background: "linear-gradient(135deg, var(--accent), var(--accent-end))",
             boxShadow: "0 10px 32px -12px var(--accent)",
@@ -170,7 +174,15 @@ export default function EntryGate({
           </p>
         )}
 
-        {status === "error" && (
+        {status === "idle" && (
+          <p className="mt-3 text-xs text-ink-faint tiny:sm:hidden">
+            Next, your browser asks to use your location. Tap <b className="text-ink-dim">Allow</b>.
+          </p>
+        )}
+
+        {status === "error" && denied && <LocationHelp onRetry={enter} />}
+
+        {status === "error" && !denied && (
           <p
             role="alert"
             className="anim-fade mt-4 max-w-sm rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-[#ffb3bd]"
@@ -179,11 +191,12 @@ export default function EntryGate({
           </p>
         )}
 
-        <ul className="mt-4 flex flex-wrap sm:mt-6 gap-x-5 gap-y-2 text-xs text-ink-dim">
+        <ul className="mt-4 flex flex-wrap sm:mt-6 short:sm:mt-3 gap-x-5 gap-y-2 text-xs text-ink-dim">
           <Pledge icon={<PinIcon width={15} height={15} />}>Exact spot never shown</Pledge>
           <Pledge icon={<GhostIcon width={15} height={15} />}>No accounts, no names</Pledge>
           <Pledge icon={<ShieldIcon width={15} height={15} />}>Nothing stored</Pledge>
         </ul>
+      </div>
       </div>
       </div>
     </div>
@@ -233,6 +246,74 @@ function Count({ color, n, label, pulse }: { color: string; n: number; label: st
   );
 }
 
+// Location was blocked. Plain-language steps for the browser they're on,
+// since "enable it in site settings" means nothing to most people.
+function LocationHelp({ onRetry }: { onRetry: () => void }) {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const steps = ios
+    ? [
+        "Tap the page menu (aA or ⋯) next to the web address.",
+        "Tap Website Settings, then set Location to Allow.",
+        "Still blocked? Open Settings › Privacy & Security › Location Services › Safari Websites, and choose While Using the App.",
+      ]
+    : /Android/.test(ua)
+      ? [
+          "Tap the icon to the left of the web address (🔒 or ⓘ).",
+          "Tap Permissions › Location, then choose Allow.",
+          "Make sure your phone's Location is switched on (swipe down from the top).",
+        ]
+      : /Firefox/.test(ua)
+        ? [
+            "Click the icon to the left of the address bar.",
+            "Next to Access your location, click × to clear Blocked.",
+            "Reload the page.",
+          ]
+        : /Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua)
+          ? [
+              "Open Safari › Settings › Websites › Location.",
+              "Set this site to Allow.",
+              "Reload the page.",
+            ]
+          : [
+              "Click the icon to the left of the address bar.",
+              "Turn on Location (or Site settings › Location › Allow).",
+              "Reload the page.",
+            ];
+  return (
+    <div role="alert" className="anim-fade mt-4 rounded-2xl border border-line bg-white/[0.04] p-4 text-sm">
+      <p className="flex items-center gap-2 font-semibold">
+        <span aria-hidden="true">📍</span> Location is turned off for Pulse
+      </p>
+      <p className="mt-1 text-ink-dim">
+        Pulse only uses it to place your dot nearby (never your exact spot). To turn it on:
+      </p>
+      <ol className="mt-3 space-y-1.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-2.5 text-ink-dim">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">
+              {i + 1}
+            </span>
+            {s}
+          </li>
+        ))}
+      </ol>
+      <div className="mt-4 flex gap-2">
+        <button type="button" onClick={onRetry} className="btn-primary h-10 flex-1 rounded-full text-sm">
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={() => location.reload()}
+          className="btn-ghost h-10 flex-1 rounded-full text-sm font-medium"
+        >
+          Reload page
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Segmented<T extends string>({
   label,
   options,
@@ -271,6 +352,7 @@ function Step({
   n,
   active,
   phone,
+  className = "",
   title,
   text,
   children,
@@ -278,12 +360,13 @@ function Step({
   n: number;
   active?: boolean;
   phone?: boolean; // keep the description on small screens
+  className?: string;
   title: string;
   text: string;
   children?: React.ReactNode;
 }) {
   return (
-    <li className="flex gap-4">
+    <li className={`flex gap-4 ${className}`}>
       <span
         className={`grid size-8 shrink-0 place-items-center rounded-full text-sm font-semibold ${
           active ? "bg-accent text-[var(--accent-ink)]" : "bg-accent/10 text-accent"
@@ -294,7 +377,7 @@ function Step({
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-semibold leading-tight">{title}</p>
-        <p className={`mt-0.5 text-sm leading-snug text-ink-dim ${phone ? "" : "hidden sm:block"}`}>
+        <p className={`mt-0.5 text-sm leading-snug text-ink-dim ${phone ? "short:sm:line-clamp-1 tiny:sm:hidden" : "hidden sm:block short:sm:hidden"}`}>
           {text}
         </p>
         {children}

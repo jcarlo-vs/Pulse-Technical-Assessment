@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Short screens (small laptops, zoomed browsers): tighten tall panels. */
+@custom-variant short (@media (max-height: 900px));
+@custom-variant tiny (@media (max-height: 700px));
+
 :root {
   /* Graphite: near-black ground, charcoal surfaces, one sky-blue accent. */
   --bg: #0b0b0c;
