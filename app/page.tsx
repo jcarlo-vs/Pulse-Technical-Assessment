@@ -63,6 +63,8 @@ export default function Home() {
     videoRef.current = v;
     _setVideo(v);
     if (v !== "active") setPrivacy(HIDDEN); // every call starts blurred
+    setChatOverVideo(false);
+    setUnread(false);
   };
 
   const [privacy, _setPrivacy] = useState<Privacy>(HIDDEN);
@@ -77,6 +79,9 @@ export default function Home() {
   const [filter, setFilter] = useState<VibeId | null>(null);
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [found, setFound] = useState<string | null>(null);
+  // Phones: chat opens as a sheet over the video (desktop shows it beside).
+  const [chatOverVideo, setChatOverVideo] = useState(false);
+  const [unread, setUnread] = useState(false);
   // Coarse live activity for the entry screen (before joining).
   const [glance, setGlance] = useState<Glance | null>(null);
   const skipped = useRef<Set<string>>(new Set());
@@ -114,6 +119,7 @@ export default function Home() {
   }
 
   function addMessage(mine: boolean, text: string, extra?: Pick<ChatMessage, "photo" | "voice">) {
+    if (!mine) setUnread(true);
     setMessages((prev) => [...prev, { id: msgId.current++, mine, text, ...extra }]);
   }
 
@@ -716,6 +722,12 @@ export default function Home() {
           }}
           onStartVideo={startVideoRequest}
           onEnd={endConnection}
+          overVideo={video === "active" && chatOverVideo}
+          onHide={
+            video === "active"
+              ? () => setChatOverVideo(false)
+              : undefined
+          }
         />
       )}
 
@@ -746,6 +758,11 @@ export default function Home() {
           privacy={privacy}
           onToggleShowMe={toggleShowMe}
           onEnd={endVideo}
+          onOpenChat={() => {
+            setChatOverVideo(true);
+            setUnread(false);
+          }}
+          unread={!chatOverVideo && unread}
         />
       )}
     </main>

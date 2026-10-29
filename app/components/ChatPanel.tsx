@@ -37,6 +37,8 @@ export default function ChatPanel({
   onSend,
   onStartVideo,
   onEnd,
+  overVideo,
+  onHide,
 }: {
   messages: ChatMessage[];
   connected: boolean;
@@ -51,6 +53,9 @@ export default function ChatPanel({
   onSend: (text: string) => void;
   onStartVideo: () => void;
   onEnd: () => void;
+  // During a video call on phones: sit above the video, with a way back.
+  overVideo?: boolean;
+  onHide?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -119,7 +124,7 @@ export default function ChatPanel({
   return (
     <section
       aria-label="Chat with stranger"
-      className="glass-strong anim-chat absolute inset-x-0 bottom-0 z-30 flex h-[72dvh] flex-col rounded-t-[28px] md:inset-x-auto md:bottom-4 md:right-4 md:top-4 md:h-auto md:w-[400px] md:rounded-[28px]"
+      className={`glass-strong anim-chat absolute inset-x-0 bottom-0 ${overVideo ? "z-50" : "z-30"} flex h-[72dvh] flex-col rounded-t-[28px] md:inset-x-auto md:bottom-4 md:right-4 md:top-4 md:h-auto md:z-30 md:w-[400px] md:rounded-[28px]`}
     >
       <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-white/15 md:hidden" />
 
@@ -151,6 +156,16 @@ export default function ChatPanel({
             </span>
           </p>
         </div>
+        {onHide && (
+          <button
+            onClick={onHide}
+            aria-label="Back to video"
+            title="Back to video"
+            className="btn-ghost grid size-10 place-items-center rounded-full md:hidden"
+          >
+            <VideoIcon />
+          </button>
+        )}
         <button
           onClick={onStartVideo}
           disabled={!connected || videoBusy}

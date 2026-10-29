@@ -8,6 +8,7 @@ import {
   ShieldIcon,
   VideoIcon,
   VideoOffIcon,
+  ChatIcon,
 } from "./icons";
 
 export default function VideoPanel({
@@ -16,12 +17,16 @@ export default function VideoPanel({
   privacy,
   onToggleShowMe,
   onEnd,
+  onOpenChat,
+  unread,
 }: {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   privacy: { showMe: boolean; theyShow: boolean };
   onToggleShowMe: () => void;
   onEnd: () => void;
+  onOpenChat: () => void;
+  unread: boolean;
 }) {
   const { showMe, theyShow } = privacy;
   // Intro card until the user shows themselves or dismisses it.
@@ -62,7 +67,9 @@ export default function VideoPanel({
   }
 
   return (
-    <div className="anim-fade absolute inset-0 z-40 bg-black">
+    // Desktop leaves room on the right so the chat stays visible beside the
+    // video; phones open it as a sheet from the chat button.
+    <div className="anim-fade absolute inset-0 z-40 bg-black md:right-[432px] md:overflow-hidden md:rounded-r-[28px]">
       {/* Remote (full screen) */}
       {/* Also blurred on *your* screen until they choose to show themselves,
           regardless of what they send: a modified client can't flash you. */}
@@ -169,6 +176,17 @@ export default function VideoPanel({
         >
           <ShieldIcon />
         </LabeledToggle>
+        <button
+          onClick={onOpenChat}
+          aria-label={unread ? "Open chat, new message" : "Open chat"}
+          title="Chat"
+          className="btn-ghost relative grid size-12 place-items-center rounded-full md:hidden"
+        >
+          <ChatIcon />
+          {unread && (
+            <span className="absolute right-2.5 top-2.5 size-2.5 rounded-full bg-danger ring-2 ring-black" />
+          )}
+        </button>
         <button
           onClick={onEnd}
           aria-label="End video and return to chat"
