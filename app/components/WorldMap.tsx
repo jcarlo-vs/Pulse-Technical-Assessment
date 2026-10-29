@@ -4,16 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
 import type { PeerDot } from "@/lib/types";
+import { LocateIcon } from "./icons";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-function dotColor(id: string): string {
+// Stable per-session color: bright, saturated hues that read well on the
+// dark globe.
+export function peerColor(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = (hash * 31 + id.charCodeAt(i)) | 0;
   }
-  return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`;
+  return `hsl(${Math.abs(hash) % 360}, 85%, 66%)`;
 }
+
+const SPIN_DEG_PER_SEC = 3;
 
 export default function WorldMap({
   peers,
@@ -30,6 +35,7 @@ export default function WorldMap({
   const mapRef = useRef<MapboxMap | null>(null);
   const markersRef = useRef<Map<string, Marker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
+  const spinRef = useRef(true);
   const [ready, setReady] = useState(false);
 
   // Marker click handlers are bound once, so read the live click handler +
@@ -41,7 +47,7 @@ export default function WorldMap({
     canConnectRef.current = canConnect;
   });
 
-  // Initialise the map once.
+  // Initialise the globe once.
   useEffect(() => {
     if (!TOKEN || !containerRef.current) return;
     let cancelled = false;
@@ -51,16 +57,51 @@ export default function WorldMap({
       const mapboxgl = (await import("mapbox-gl")).default;
       if (cancelled || !containerRef.current) return;
       mapboxgl.accessToken = TOKEN;
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
       const map = new mapboxgl.Map({
         container: containerRef.current,
         style: "mapbox://styles/mapbox/dark-v11",
-        // Open centered on the user if we know where they are, else world view.
-        center: me ? [me.lng, me.lat] : [0, 20],
-        zoom: me ? 4 : 1.4,
-        attributionControl: true,
+        projection: "globe",
+        center: [100, 18],
+        zoom: window.innerWidth < 768 ? 0.9 : 1.6,
+        attributionControl: false,
       });
+      map.addControl(
+        new mapboxgl.AttributionControl({ compact: true }),
+        "bottom-right",
+      );
+
+      map.on("style.load", () => {
+        map.setFog({
+          color: "rgb(14, 16, 34)",
+          "high-color": "rgb(48, 40, 120)",
+          "horizon-blend": 0.06,
+          "space-color": "rgb(5, 6, 13)",
+          "star-intensity": 0.7,
+        });
+      });
+
+      // Idle rotation until the user lands (or touches the globe).
+      const spin = () => {
+        if (!spinRef.current || reduceMotion || map.getZoom() > 4) return;
+        const center = map.getCenter();
+        center.lng -= SPIN_DEG_PER_SEC;
+        map.easeTo({ center, duration: 1000, easing: (n) => n });
+      };
+      const stopSpin = () => {
+        spinRef.current = false;
+      };
+      map.on("mousedown", stopSpin);
+      map.on("touchstart", stopSpin);
+      map.on("wheel", stopSpin);
+      map.on("moveend", spin);
+
       map.on("load", () => {
-        if (!cancelled) setReady(true);
+        if (cancelled) return;
+        setReady(true);
+        spin();
       });
       mapRef.current = map;
     })();
@@ -75,11 +116,9 @@ export default function WorldMap({
       mapRef.current = null;
       setReady(false);
     };
-    // `me` is only read for the initial center; we don't want to re-init on change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show / move the user's own "you are here" pin.
+  // Land on the user: stop spinning, fly in, drop the "you" beacon.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !me) return;
@@ -89,12 +128,19 @@ export default function WorldMap({
       const mapboxgl = (await import("mapbox-gl")).default;
       if (cancelled) return;
       if (!meMarkerRef.current) {
+        spinRef.current = false;
+        map.flyTo({
+          center: [me.lng, me.lat],
+          zoom: 4.5,
+          speed: 0.9,
+          curve: 1.6,
+          essential: true,
+        });
         const el = document.createElement("div");
-        el.className = "pulse-me";
-        el.title = "You are here";
-        el.innerHTML = `<span class="pulse-me-label">Me</span>📍`;
-        // anchor "bottom" → the pin's tip sits on the exact coordinate.
-        meMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        el.className = "me";
+        el.title = "You. Others see your dot here, 1–3 km from your real location.";
+        el.innerHTML = `<span class="me-label">You</span><span class="me-core"></span>`;
+        meMarkerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([me.lng, me.lat])
           .addTo(map);
       } else {
@@ -124,11 +170,14 @@ export default function WorldMap({
         let marker = markers.get(peer.id);
         if (!marker) {
           const el = document.createElement("button");
-          el.className = "pulse-dot";
-          el.style.background = dotColor(peer.id);
-          el.title = "Tap to connect";
+          el.className = "dot is-new";
+          el.style.setProperty("--c", peerColor(peer.id));
+          // Desync the ring animations so the map breathes, not blinks.
+          el.style.setProperty("--d", `${(Math.random() * 2.6).toFixed(2)}s`);
+          el.innerHTML = `<span class="dot-core"></span>`;
           el.addEventListener("click", (e) => {
             e.stopPropagation();
+            if (el.classList.contains("is-busy")) return;
             if (canConnectRef.current) onPeerClickRef.current(peer.id);
           });
           marker = new mapboxgl.Marker({ element: el })
@@ -136,7 +185,13 @@ export default function WorldMap({
             .addTo(map);
           markers.set(peer.id, marker);
         }
-        marker.getElement().style.opacity = peer.busy ? "0.35" : "1";
+        const el = marker.getElement();
+        el.classList.toggle("is-busy", peer.busy);
+        const label = peer.busy
+          ? "Stranger (in a conversation)"
+          : "Stranger, tap to connect";
+        el.title = label;
+        el.setAttribute("aria-label", label);
       }
 
       // Drop markers for peers that went offline / got filtered out.
@@ -153,24 +208,35 @@ export default function WorldMap({
     };
   }, [peers, ready]);
 
+  function recenter() {
+    if (mapRef.current && me) {
+      mapRef.current.flyTo({ center: [me.lng, me.lat], zoom: 4.5, essential: true });
+    }
+  }
+
   return (
     <div className="absolute inset-0">
-      <div ref={containerRef} className="h-full w-full bg-zinc-900" />
+      <div ref={containerRef} className="h-full w-full bg-bg" />
 
       {!TOKEN && (
         <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
-          <p className="max-w-md rounded-lg bg-zinc-800 p-4 text-sm text-zinc-200">
-            Set{" "}
-            <code className="text-emerald-400">NEXT_PUBLIC_MAPBOX_TOKEN</code> in{" "}
+          <p className="glass max-w-md rounded-2xl p-4 text-sm text-ink-dim">
+            Set <code className="text-accent">NEXT_PUBLIC_MAPBOX_TOKEN</code> in{" "}
             <code>.env</code> to load the map.
           </p>
         </div>
       )}
 
-      {/* Online count */}
-      <div className="absolute bottom-4 left-4 rounded-full bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-300 backdrop-blur">
-        {peers.length} online
-      </div>
+      {me && (
+        <button
+          onClick={recenter}
+          aria-label="Center on my location"
+          title="Center on me"
+          className="glass btn-ghost absolute bottom-24 left-4 z-10 grid size-11 place-items-center rounded-full md:bottom-8"
+        >
+          <LocateIcon />
+        </button>
+      )}
     </div>
   );
 }
