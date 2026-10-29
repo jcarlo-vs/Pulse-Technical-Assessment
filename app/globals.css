@@ -14,8 +14,45 @@
   --glass: rgba(28, 28, 31, 0.84);
   --glass-strong: rgba(24, 24, 27, 0.96);
   --line: rgba(255, 255, 255, 0.1);
+  --panel: rgba(24, 24, 27, 0.9); /* entry panel */
   /* Surfaces stay flat: just a faint top edge. */
   --clay: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --btn-shadow: 0 8px 24px -12px rgba(29, 155, 240, 0.8);
+  --font-ui: var(--font-geist-sans);
+}
+
+/* Theme picker (lib/theme.ts). Each theme only swaps tokens; the globe's
+   colours live next to them in lib/theme.ts. */
+:root[data-theme="navy"] {
+  --bg: #15202b;
+  --ink: #f7f9f9;
+  --ink-dim: #a3b1bf;
+  --ink-faint: #8193a4;
+  --glass: rgba(21, 32, 43, 0.82);
+  --glass-strong: rgba(25, 39, 52, 0.96);
+  --line: rgba(139, 152, 165, 0.24);
+  --panel: rgba(25, 39, 52, 0.9);
+}
+
+:root[data-theme="clay"] {
+  --bg: #1a1430;
+  --ink: #f6f1ff;
+  --ink-dim: #c3b6e6;
+  --ink-faint: #9585c2;
+  --accent: #b9a2ff;
+  --accent-2: #ff9fca;
+  --accent-end: #ffb3d6;
+  --accent-ink: #25183f;
+  --danger: #ff6b8a;
+  --glass: rgba(52, 40, 92, 0.72);
+  --glass-strong: rgba(42, 32, 76, 0.93);
+  --line: rgba(255, 255, 255, 0.11);
+  --panel: rgba(36, 27, 66, 0.85);
+  /* Clay: a light top edge and a darker underside. */
+  --clay: inset 0 1.5px 0 rgba(255, 255, 255, 0.14), inset 0 -4px 0 rgba(15, 6, 40, 0.28);
+  --btn-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), inset 0 -4px 0 rgba(90, 50, 170, 0.35),
+    0 10px 28px -10px rgba(185, 162, 255, 0.75);
+  --font-ui: var(--font-baloo);
 }
 
 @theme inline {
@@ -27,7 +64,7 @@
   --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
   --color-line: var(--line);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-ui);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -73,7 +110,7 @@ body {
   background: linear-gradient(135deg, var(--accent), var(--accent-end));
   color: var(--accent-ink);
   font-weight: 700;
-  box-shadow: 0 8px 24px -12px rgba(29, 155, 240, 0.8);
+  box-shadow: var(--btn-shadow);
   transition:
     transform 0.15s ease,
     box-shadow 0.2s ease,
@@ -81,7 +118,6 @@ body {
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 12px 30px -12px rgba(29, 155, 240, 0.95);
   filter: brightness(1.05);
 }
 .btn-primary:active:not(:disabled) {
@@ -276,14 +312,14 @@ body {
   border-radius: 9999px;
   background: white;
   border: 3px solid var(--accent-2);
-  box-shadow: 0 0 18px 4px rgba(29, 155, 240, 0.7);
+  box-shadow: 0 0 18px 4px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .me::before {
   content: "";
   position: absolute;
   inset: -20px;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(29, 155, 240, 0.35), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%);
   animation: breathe 3s ease-in-out infinite;
 }
 .me-label {
@@ -297,9 +333,9 @@ body {
   letter-spacing: 0.02em;
   padding: 3px 8px;
   border-radius: 9999px;
-  color: white;
-  background: rgba(29, 155, 240, 0.9);
-  box-shadow: 0 4px 14px -4px rgba(29, 155, 240, 0.9);
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 4px 14px -4px var(--accent);
 }
 
 /* Mapbox chrome: keep attribution legible but quiet. */
@@ -421,6 +457,39 @@ body {
 
 .anim-rise {
   animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-pop {
+  animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+/* Dropdowns: unfold from the top edge, and fold back up on close. */
+.menu-in {
+  transform-origin: top left;
+  animation: menu-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.menu-out {
+  transform-origin: top left;
+  animation: menu-in 0.15s ease-in reverse both;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+/* Slim scrollbar that matches the surface instead of the OS default. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
 }
 .anim-drop {
   animation: drop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;

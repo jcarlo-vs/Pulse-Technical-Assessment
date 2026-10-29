@@ -11,6 +11,7 @@ export default function ConnectionPrompt({
   onDecline,
   color = "var(--accent)",
   icon,
+  danger,
 }: {
   title: string;
   subtitle?: string;
@@ -20,6 +21,8 @@ export default function ConnectionPrompt({
   onDecline: () => void;
   color?: string;
   icon?: React.ReactNode;
+  // Destructive: red action, and the safe choice gets focus.
+  danger?: boolean;
 }) {
   return (
     <div
@@ -52,14 +55,15 @@ export default function ConnectionPrompt({
         <div className="mt-6 flex gap-3">
           <button
             onClick={onDecline}
+            autoFocus={danger}
             className="btn-ghost h-12 flex-1 rounded-full text-sm font-medium"
           >
             {declineLabel}
           </button>
           <button
             onClick={onAccept}
-            autoFocus
-            className="btn-primary h-12 flex-1 rounded-full text-sm"
+            autoFocus={!danger}
+            className={`${danger ? "btn-danger font-semibold" : "btn-primary"} h-12 flex-1 rounded-full text-sm`}
           >
             {acceptLabel}
           </button>

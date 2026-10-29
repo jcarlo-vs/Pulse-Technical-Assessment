@@ -72,6 +72,32 @@ export function formatDistance(km: number): string {
 
 const cache = new Map<string, string | null>();
 
+// ISO alpha-2 country of a point (the offset dot, never the raw location),
+// for the country filter. "" over the ocean or on failure.
+export async function countryCode({ lat, lng }: Point): Promise<string> {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token) return "";
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&types=country&limit=1&access_token=${token}`,
+    );
+    const code = (await res.json()).features?.[0]?.properties?.context?.country?.country_code;
+    return typeof code === "string" ? code.toUpperCase() : "";
+  } catch {
+    return "";
+  }
+}
+
+// "🇵🇭 Philippines" from "PH", using the browser's own country names.
+export function countryLabel(code: string): string {
+  const flag = String.fromCodePoint(...[...code].map((c) => 0x1f1a5 + c.charCodeAt(0)));
+  let name = code;
+  try {
+    name = new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code;
+  } catch {}
+  return `${flag} ${name}`;
+}
+
 // City-level name via Mapbox reverse geocoding: one lookup per call, never
 // per dot. Null over the ocean or if the lookup fails.
 export async function placeName({ lat, lng }: Point): Promise<string | null> {

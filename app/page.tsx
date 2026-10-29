@@ -7,13 +7,20 @@ import VibeFilter from "./components/VibeFilter";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
-import { CloseIcon, VideoIcon } from "./components/icons";
+import ThemePicker from "./components/ThemePicker";
+import { CloseIcon, PhoneOffIcon, VideoIcon } from "./components/icons";
 import { join, leave, newSecret, poll, sendSignal, type Profile } from "@/lib/api";
 import { DEFAULT_GENDER, DEFAULT_SEEKING, SEEKING, type Seeking } from "@/lib/match";
-import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
+import {
+  newMsgId,
+  PeerSession,
+  UNDO_MS,
+  type DescType,
+  type PeerControl,
+} from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
-import { distanceKm, formatDistance, placeName } from "@/lib/geo";
+import { countryCode, distanceKm, formatDistance, placeName } from "@/lib/geo";
 import { startRing } from "@/lib/ring";
 import { type Glance, type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
@@ -77,11 +84,15 @@ export default function Home() {
 
   const [myVibe, setMyVibe] = useState<VibeId>(DEFAULT_VIBE);
   const [filter, setFilter] = useState<VibeId | null>(null);
+  const [countryFilter, setCountryFilter] = useState<string | null>(null);
+  const myCountry = useRef("");
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [found, setFound] = useState<string | null>(null);
   // Phones: chat opens as a sheet over the video (desktop shows it beside).
   const [chatOverVideo, setChatOverVideo] = useState(false);
   const [unread, setUnread] = useState(false);
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   // Coarse live activity for the entry screen (before joining).
   const [glance, setGlance] = useState<Glance | null>(null);
   const skipped = useRef<Set<string>>(new Set());
@@ -118,9 +129,39 @@ export default function Home() {
     );
   }
 
-  function addMessage(mine: boolean, text: string, extra?: Pick<ChatMessage, "photo" | "voice">) {
+  function addMessage(
+    mine: boolean,
+    text: string,
+    wid: string,
+    extra?: Pick<ChatMessage, "photo" | "voice" | "replyTo">,
+  ) {
     if (!mine) setUnread(true);
-    setMessages((prev) => [...prev, { id: msgId.current++, mine, text, ...extra }]);
+    setMessages((prev) => [
+      ...prev,
+      { id: msgId.current++, wid, at: Date.now(), mine, text, ...extra },
+    ]);
+  }
+
+  const updateMessage = (match: (m: ChatMessage) => boolean, change: Partial<ChatMessage>) =>
+    setMessages((prev) => prev.map((m) => (match(m) ? { ...m, ...change } : m)));
+  const REMOVED = { unsent: true, text: "", photo: undefined, voice: undefined };
+
+  // Undo send: only my own message, only within the window.
+  function unsendMessage(m: ChatMessage) {
+    if (!m.mine || Date.now() - m.at > UNDO_MS) return;
+    peerRef.current?.sendUnsend(m.wid);
+    updateMessage((x) => x.id === m.id, REMOVED);
+  }
+
+  function reactMessage(m: ChatMessage, emoji: string) {
+    peerRef.current?.sendReact(m.wid, emoji);
+    updateMessage((x) => x.id === m.id, { myReact: emoji || undefined });
+  }
+
+  // Up to MAX_PINS pinned messages, shared with the other person.
+  function setPins(ids: string[]) {
+    peerRef.current?.sendPins(ids);
+    setPinned(ids);
   }
 
   // In-memory URL for a photo or voice note, revoked when the chat ends.
@@ -135,8 +176,9 @@ export default function Home() {
     if (!ps) return;
     try {
       const photo = await preparePhoto(file);
-      await ps.sendFile("photo", photo);
-      addMessage(true, "", { photo: mediaUrl(photo) });
+      const wid = newMsgId();
+      await ps.sendFile("photo", photo, wid);
+      addMessage(true, "", wid, { photo: mediaUrl(photo) });
     } catch (e) {
       showNotice(e instanceof Error ? e.message : "Couldn't send that photo.");
     }
@@ -146,8 +188,9 @@ export default function Home() {
     const ps = peerRef.current;
     if (!ps) return;
     try {
-      await ps.sendFile("voice", voice, seconds);
-      addMessage(true, "", { voice: { src: mediaUrl(voice), seconds } });
+      const wid = newMsgId();
+      await ps.sendFile("voice", voice, wid, seconds);
+      addMessage(true, "", wid, { voice: { src: mediaUrl(voice), seconds } });
     } catch (e) {
       showNotice(e instanceof Error ? e.message : "Couldn't send that voice note.");
     }
@@ -161,6 +204,7 @@ export default function Home() {
     setRemoteStream(null);
     setVideo("none");
     setMessages([]);
+    setPinned([]);
     mediaUrls.current.forEach((u) => URL.revokeObjectURL(u));
     mediaUrls.current = [];
     setConn({ kind: "idle" });
@@ -172,10 +216,20 @@ export default function Home() {
       onSignal: (type: DescType, payload: string) => {
         void sendSignal(secret, peerId, type, payload);
       },
-      onChat: (text) => addMessage(false, text),
-      onPhoto: (photo) => addMessage(false, "", { photo: mediaUrl(photo) }),
-      onVoice: (voice, seconds) =>
-        addMessage(false, "", { voice: { src: mediaUrl(voice), seconds } }),
+      onChat: (text, wid, replyTo) => addMessage(false, text, wid, { replyTo }),
+      onPhoto: (photo, wid) => addMessage(false, "", wid, { photo: mediaUrl(photo) }),
+      onVoice: (voice, seconds, wid) =>
+        addMessage(false, "", wid, { voice: { src: mediaUrl(voice), seconds } }),
+      // Their undo: honoured only for their own message, inside the window
+      // (plus a little slack for delivery), so it can't erase old history.
+      onUnsend: (wid) =>
+        updateMessage(
+          (m) => !m.mine && m.wid === wid && Date.now() - m.at <= UNDO_MS + 5000,
+          REMOVED,
+        ),
+      onReact: (wid, emoji) =>
+        updateMessage((m) => m.wid === wid, { theirReact: emoji || undefined }),
+      onPins: (ids) => setPinned(ids),
       onControl: (ctrl) => handleControl(ctrl),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onConnectionState: (state) => {
@@ -255,7 +309,12 @@ export default function Home() {
   // "Find someone": preview a random free match within the current vibe
   // filter; the user then says hello or skips to the next one.
   function findSomeone() {
-    const free = peers.filter((p) => !p.busy && (!filter || p.vibe === filter));
+    const free = peers.filter(
+      (p) =>
+        !p.busy &&
+        (!filter || p.vibe === filter) &&
+        (!countryFilter || p.country === countryFilter),
+    );
     let pool = free.filter((p) => !skipped.current.has(p.id));
     if (pool.length === 0) {
       skipped.current.clear(); // seen everyone: start the round again
@@ -420,7 +479,7 @@ export default function Home() {
 
     const tick = async () => {
       try {
-        const data = await poll(secret, profileRef.current.seeking);
+        const data = await poll(secret, profileRef.current.seeking, myCountry.current);
         if (!active) return;
         if (!data) {
           if (myLocationRef.current) {
@@ -460,12 +519,21 @@ export default function Home() {
 
   useEffect(() => {
     if (!secret || phase !== "live") return;
+    // Leave only when the page really goes away (pagehide). Sending it on
+    // beforeunload would hang up even if the user cancels the warning below.
     const onLeave = () => leave(secret);
+    // Mid-conversation, a refresh or close would disconnect the match, so
+    // ask first. Browsers show their own wording; custom text isn't allowed.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (connRef.current.kind === "idle") return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
     window.addEventListener("pagehide", onLeave);
-    window.addEventListener("beforeunload", onLeave);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("pagehide", onLeave);
-      window.removeEventListener("beforeunload", onLeave);
+      window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [secret, phase]);
 
@@ -477,6 +545,8 @@ export default function Home() {
     const placed = await join(secret, lat, lng, profile);
     myLocationRef.current = placed;
     setMyLocation(placed);
+    // Looked up from the offset dot, so the raw location never reaches Mapbox.
+    void countryCode(placed).then((c) => (myCountry.current = c));
     setPhase("live");
   }
 
@@ -510,7 +580,9 @@ export default function Home() {
   const peerId = conn.kind === "idle" ? null : conn.peerId;
   const peerVibe = vibeOf(peers.find((p) => p.id === peerId)?.vibe);
   const color = peerVibe.color;
-  const shown = filter ? peers.filter((p) => p.vibe === filter) : peers;
+  const shown = peers.filter(
+    (p) => (!filter || p.vibe === filter) && (!countryFilter || p.country === countryFilter),
+  );
   const available = shown.filter((p) => !p.busy).length;
 
   return (
@@ -551,7 +623,17 @@ export default function Home() {
       )}
 
       {live && !inChat && (
-        <VibeFilter peers={peers} value={filter} onChange={setFilter} />
+        <ThemePicker className="glass anim-fade absolute bottom-40 left-4 z-10 flex-col rounded-full p-1 md:bottom-24" />
+      )}
+
+      {live && !inChat && (
+        <VibeFilter
+          peers={peers}
+          value={filter}
+          onChange={setFilter}
+          country={countryFilter}
+          onCountry={setCountryFilter}
+        />
       )}
 
       {live && conn.kind === "idle" && !found && (
@@ -716,12 +798,19 @@ export default function Home() {
           onShuffle={() => setPromptTurn((t) => t + 1)}
           onSendPhoto={sendPhoto}
           onSendVoice={sendVoice}
-          onSend={(text) => {
-            peerRef.current?.sendChat(text);
-            addMessage(true, text);
+          onUnsend={unsendMessage}
+          onReact={reactMessage}
+          pinned={pinned
+            .map((w) => messages.find((m) => m.wid === w && !m.unsent))
+            .filter((m): m is ChatMessage => !!m)}
+          onPins={setPins}
+          onSend={(text, replyTo) => {
+            const wid = newMsgId();
+            peerRef.current?.sendChat(text, wid, replyTo);
+            addMessage(true, text, wid, { replyTo });
           }}
           onStartVideo={startVideoRequest}
-          onEnd={endConnection}
+          onEnd={() => setConfirmLeave(true)}
           overVideo={video === "active" && chatOverVideo}
           onHide={
             video === "active"
@@ -748,6 +837,23 @@ export default function Home() {
           icon={<VideoIcon width={26} height={26} />}
           onAccept={acceptVideo}
           onDecline={declineVideo}
+        />
+      )}
+
+      {confirmLeave && inChat && (
+        <ConnectionPrompt
+          title="Leave this chat?"
+          subtitle="You'll be disconnected from your match, and the conversation disappears for both of you. It can't be recovered."
+          acceptLabel="Leave"
+          declineLabel="Stay"
+          color="var(--danger)"
+          danger
+          icon={<PhoneOffIcon width={24} height={24} />}
+          onAccept={() => {
+            setConfirmLeave(false);
+            endConnection();
+          }}
+          onDecline={() => setConfirmLeave(false)}
         />
       )}
 

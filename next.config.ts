@@ -22,6 +22,10 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Dev only: hosts allowed to load dev assets, e.g. testing on a phone over
+  // a tunnel. Set PULSE_DEV_ORIGINS="abc.trycloudflare.com" in .env.local;
+  // empty by default, so nothing is opened up unless you ask for it.
+  allowedDevOrigins: (process.env.PULSE_DEV_ORIGINS ?? "").split(",").filter(Boolean),
   async headers() {
     return [
       {

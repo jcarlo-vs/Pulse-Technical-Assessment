@@ -44,8 +44,9 @@ export async function join(
 export async function poll(
   secret: string,
   seeking: Seeking,
+  country?: string,
 ): Promise<PollResponse | null> {
-  const res = await post("/api/poll", { secret, seeking });
+  const res = await post("/api/poll", { secret, seeking, country });
   if (res.status === 410) return null;
   if (!res.ok) throw new Error(`poll failed: ${res.status}`);
   return res.json();

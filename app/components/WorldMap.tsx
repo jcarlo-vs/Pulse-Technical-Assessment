@@ -6,26 +6,24 @@ import type { Map as MapboxMap, Marker } from "mapbox-gl";
 import type { Glance, PeerDot } from "@/lib/types";
 import { LocateIcon } from "./icons";
 import { vibeOf } from "@/lib/vibes";
+import { currentTheme, THEME_EVENT } from "@/lib/theme";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 const SPIN_DEG_PER_SEC = 3;
 
-// Recolour the stock dark style to the app's graphite: charcoal land on
-// near-black oceans, with lighter borders and labels so it still reads
-// as a living planet rather than a flat grey ball. Matched by layer type/id so
-// it survives Mapbox renaming individual layers.
-const GLOBE = {
-  land: "#3a3b40",
-  landShade: "#44454b",
-  water: "#121214",
-  border: "#8a8c94",
-  road: "#55575e",
-  label: "#e4e4e7",
-  halo: "#121214",
-};
-
+// Recolour the stock dark style to the current theme (lib/theme.ts): land,
+// oceans, borders and labels, so the globe never looks like a flat grey
+// ball. Matched by layer type/id so it survives Mapbox renaming layers.
 function tintGlobe(map: MapboxMap) {
+  const { globe: GLOBE, fog } = currentTheme();
+  map.setFog({
+    color: fog.color,
+    "high-color": fog.high,
+    "horizon-blend": 0.025,
+    "space-color": fog.space,
+    "star-intensity": 0.7,
+  });
   const paint = map.setPaintProperty.bind(map) as (id: string, p: string, v: string) => void;
   const set = (id: string, prop: string, value: string) => {
     try {
@@ -42,7 +40,7 @@ function tintGlobe(map: MapboxMap) {
       else set(l.id, "line-color", GLOBE.road);
     } else if (l.type === "symbol") {
       set(l.id, "text-color", GLOBE.label);
-      set(l.id, "text-halo-color", GLOBE.halo);
+      set(l.id, "text-halo-color", GLOBE.water);
     }
   }
 }
@@ -117,16 +115,10 @@ export default function WorldMap({
         "bottom-right",
       );
 
-      map.on("style.load", () => {
-        map.setFog({
-          color: "rgb(30, 31, 34)",
-          "high-color": "rgb(34, 58, 88)",
-          "horizon-blend": 0.025,
-          "space-color": "rgb(11, 11, 12)",
-          "star-intensity": 0.7,
-        });
-        tintGlobe(map);
-      });
+      map.on("style.load", () => tintGlobe(map));
+      const retint = () => tintGlobe(map);
+      window.addEventListener(THEME_EVENT, retint);
+      map.on("remove", () => window.removeEventListener(THEME_EVENT, retint));
 
       // Idle rotation until the user lands (or touches the globe).
       const spin = () => {
@@ -184,7 +176,7 @@ export default function WorldMap({
         });
         const el = document.createElement("div");
         el.className = "me";
-        el.title = "You. Others see your dot here, 1–3 km from your real location.";
+        el.title = "You. Others see your dot here, 1-3 km from your real location.";
         el.innerHTML = `<span class="me-label">You ${vibeOf(myVibe).emoji}</span><span class="me-core"></span>`;
         meMarkerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([me.lng, me.lat])

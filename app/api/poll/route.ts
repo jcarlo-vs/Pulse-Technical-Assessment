@@ -8,7 +8,7 @@ import { compatible, isSeeking } from "@/lib/match";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/poll - body { secret, seeking? }. POST (not GET ?id=) so the session secret
+// POST /api/poll - body { secret, seeking?, country? }. POST (not GET ?id=) so the session secret
 // never lands in URLs, access logs or browser history.
 // It (1) heartbeats the caller, (2) reaps stale presence + orphan signals,
 // (3) returns the online peers, and (4) drains this user's mailbox.
@@ -29,6 +29,10 @@ export async function POST(request: NextRequest) {
     data: {
       lastSeen: new Date(now),
       ...(isSeeking(body.seeking) ? { seeking: body.seeking } : {}),
+      // Two capital letters only: shown to others, so no free text.
+      ...(typeof body.country === "string" && /^[A-Z]{2}$/.test(body.country)
+        ? { country: body.country }
+        : {}),
     },
   });
   // Row was reaped (e.g. a backgrounded tab's timers were throttled past
@@ -54,6 +58,7 @@ export async function POST(request: NextRequest) {
       vibe: true,
       gender: true,
       seeking: true,
+      country: true,
     },
   });
   const me = rows.find((r) => r.id === id);
@@ -105,7 +110,14 @@ export async function POST(request: NextRequest) {
           p.id !== id &&
           (!me || compatible(me, p) || p.id === me.peerId || p.peerId === id),
       )
-      .map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, busy: p.busy, vibe: p.vibe })),
+      .map((p) => ({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        busy: p.busy,
+        vibe: p.vibe,
+        country: p.country,
+      })),
     signals,
   };
 

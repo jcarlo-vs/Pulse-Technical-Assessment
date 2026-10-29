@@ -1,9 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Baloo_2, Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { THEME_BOOT } from "@/lib/theme";
 
 const geistSans = Inter({
   variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+// Rounded type for the "Cozy clay" theme.
+const baloo = Baloo_2({
+  variable: "--font-baloo",
   subsets: ["latin"],
 });
 
@@ -30,8 +37,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${baloo.variable} ${geistMono.variable} h-full antialiased`}
+      // data-theme is set by THEME_BOOT before React hydrates.
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body className="min-h-full">{children}</body>
     </html>
   );

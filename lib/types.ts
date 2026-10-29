@@ -16,6 +16,7 @@ export interface PeerDot {
   lng: number;
   busy: boolean;
   vibe: string;
+  country: string; // ISO alpha-2, "" if unknown
 }
 
 export interface SignalMsg {

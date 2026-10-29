@@ -13,9 +13,12 @@ export type PeerControl =
 
 interface PeerCallbacks {
   onSignal: (type: DescType, payload: string) => void;
-  onChat: (text: string) => void;
-  onPhoto?: (photo: Blob) => void;
-  onVoice?: (voice: Blob, seconds: number) => void;
+  onChat: (text: string, id: string, replyTo?: string) => void;
+  onPhoto?: (photo: Blob, id: string) => void;
+  onVoice?: (voice: Blob, seconds: number, id: string) => void;
+  onUnsend?: (id: string) => void;
+  onReact?: (id: string, emoji: string) => void;
+  onPins?: (ids: string[]) => void;
   onControl: (ctrl: PeerControl) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onConnectionState: (state: RTCPeerConnectionState) => void;
@@ -33,6 +36,15 @@ const CONTROLS: readonly string[] = [
 
 // The peer is an untrusted stranger: cap what they can push at us.
 export const MAX_CHAT_LEN = 1000;
+
+// Messages carry a short random id so either side can refer to one later
+// (undo send, heart react). Undo is only honoured within UNDO_MS.
+export const UNDO_MS = 30_000;
+export const MAX_PINS = 5;
+const isMsgId = (v: unknown): v is string => typeof v === "string" && /^[a-z0-9]{6,16}$/.test(v);
+// The only reactions accepted, so a peer can't push arbitrary text.
+export const REACTIONS = ["❤️", "😆", "😮", "😢", "😡", "👍"] as const;
+export const newMsgId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 
 // Photos and voice notes travel as: {t:"file-start", kind, size} -> binary
 // chunks -> {t:"file-end"}. The channel is reliable + ordered, so one
@@ -66,6 +78,7 @@ export class PeerSession {
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private incoming: {
     kind: FileKind;
+    id: string;
     size: number;
     seconds: number;
     got: number;
@@ -124,9 +137,21 @@ export class PeerSession {
       if (typeof e.data !== "string" || e.data.length > MAX_CHAT_LEN * 8) return;
       try {
         const msg = JSON.parse(e.data);
-        if (msg.t === "chat" && typeof msg.text === "string") {
+        if (msg.t === "chat" && typeof msg.text === "string" && isMsgId(msg.id)) {
           const text = msg.text.trim().slice(0, MAX_CHAT_LEN);
-          if (text) this.cb.onChat(text);
+          if (text) this.cb.onChat(text, msg.id, isMsgId(msg.replyTo) ? msg.replyTo : undefined);
+        } else if (msg.t === "unsend" && isMsgId(msg.id)) {
+          this.cb.onUnsend?.(msg.id);
+        } else if (msg.t === "react" && isMsgId(msg.id)) {
+          const emoji = (REACTIONS as readonly string[]).includes(msg.emoji) ? msg.emoji : "";
+          this.cb.onReact?.(msg.id, emoji);
+        } else if (
+          msg.t === "pins" &&
+          Array.isArray(msg.ids) &&
+          msg.ids.length <= MAX_PINS &&
+          msg.ids.every(isMsgId)
+        ) {
+          this.cb.onPins?.(msg.ids);
         } else if (msg.t === "ctrl" && CONTROLS.includes(msg.ctrl)) {
           this.cb.onControl(msg.ctrl as PeerControl);
         } else if (msg.t === "file-start") {
@@ -134,6 +159,7 @@ export class PeerSession {
             msg.kind === "photo" || msg.kind === "voice" ? msg.kind : null;
           const ok =
             kind &&
+            isMsgId(msg.id) &&
             Number.isInteger(msg.size) &&
             msg.size > 0 &&
             msg.size <= MAX_BYTES[kind] &&
@@ -144,7 +170,7 @@ export class PeerSession {
             Math.max(1, Math.round(Number(msg.seconds) || 1)),
           );
           this.incoming = ok
-            ? { kind, size: msg.size, seconds, got: 0, parts: [] }
+            ? { kind, id: msg.id, size: msg.size, seconds, got: 0, parts: [] }
             : null;
         } else if (msg.t === "file-end") {
           this.finishFile();
@@ -202,8 +228,21 @@ export class PeerSession {
     }
   }
 
-  sendChat(text: string) {
-    this.safeSend({ t: "chat", text });
+  sendChat(text: string, id: string, replyTo?: string) {
+    this.safeSend({ t: "chat", text, id, replyTo });
+  }
+
+  // The whole pinned list, so both sides always agree on it.
+  sendPins(ids: string[]) {
+    this.safeSend({ t: "pins", ids });
+  }
+
+  sendUnsend(id: string) {
+    this.safeSend({ t: "unsend", id });
+  }
+
+  sendReact(id: string, emoji: string) {
+    this.safeSend({ t: "react", id, emoji });
   }
 
   // The peer is untrusted: drop anything over the declared (capped) size.
@@ -225,21 +264,21 @@ export class PeerSession {
     this.received += p.size;
     const head = new Uint8Array(p.parts[0] ?? new ArrayBuffer(0));
     if (p.kind === "photo") {
-      if (isJpeg(head)) this.cb.onPhoto?.(new Blob(p.parts, { type: "image/jpeg" }));
+      if (isJpeg(head)) this.cb.onPhoto?.(new Blob(p.parts, { type: "image/jpeg" }), p.id);
     } else {
       const type = audioType(head);
-      if (type) this.cb.onVoice?.(new Blob(p.parts, { type }), p.seconds);
+      if (type) this.cb.onVoice?.(new Blob(p.parts, { type }), p.seconds, p.id);
     }
   }
 
-  async sendFile(kind: FileKind, file: Blob, seconds = 0): Promise<void> {
+  async sendFile(kind: FileKind, file: Blob, id: string, seconds = 0): Promise<void> {
     const dc = this.dc;
     if (!dc || dc.readyState !== "open") throw new Error("Not connected.");
     if (this.sending) throw new Error("Wait for the last one to finish sending.");
     this.sending = true;
     try {
       const bytes = await file.arrayBuffer();
-      dc.send(JSON.stringify({ t: "file-start", kind, size: bytes.byteLength, seconds }));
+      dc.send(JSON.stringify({ t: "file-start", kind, id, size: bytes.byteLength, seconds }));
       dc.bufferedAmountLowThreshold = HIGH_WATER / 2;
       for (let i = 0; i < bytes.byteLength; i += CHUNK) {
         if (dc.bufferedAmount > HIGH_WATER) {

@@ -20,6 +20,7 @@ model Presence {
   vibe     String   @default("chat") // mood picked on entry (lib/vibes.ts)
   gender   String   @default("x") // self-declared; matching only, never sent to peers
   seeking  String   @default("any") // who they want to talk to (lib/match.ts)
+  country  String   @default("") // ISO 3166 alpha-2 of the offset dot, for the country filter
   lastSeen DateTime
 
   @@index([lastSeen])
