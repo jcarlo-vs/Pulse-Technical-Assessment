@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Baloo_2, Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { THEME_BOOT } from "@/lib/theme";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
 const geistSans = Inter({
   variable: "--font-geist-sans",
@@ -20,8 +21,35 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pulse: talk to someone, somewhere, right now",
-  description: "A living globe of anonymous strangers. Tap a dot, start talking.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${SITE_NAME}: ${SITE_TAGLINE.toLowerCase().replace(/\.$/, "")}`,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: [
+    "anonymous chat",
+    "talk to strangers",
+    "random video chat",
+    "live globe",
+    "peer-to-peer",
+    "no sign up",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: SITE_NAME,
+    title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE_NAME}: ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+  },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
