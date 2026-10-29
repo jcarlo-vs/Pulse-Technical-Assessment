@@ -38,7 +38,7 @@ For each problem I reproduced it with two windows, found the cause in the code, 
 - **Video:** the chat stays visible beside the video, and your own small preview shows exactly what the other person sees.
 - **Its own look:** a dark graphite theme with one blue accent, because neon-on-black is what most apps look like right now. You can switch to Navy or Cozy clay, and the globe changes color too.
 - **Logo and sharing:** a Pulse logo (a heartbeat line ending in a dot) used as the browser-tab icon and the iPhone home-screen icon. A preview card appears when the link is shared, and the page has proper search engine info.
-- **Every screen size:** phones get bottom sheets, and small laptops get a compact entry screen so nothing gets cut off or squashed.
+- **Every screen size:** phones get bottom sheets and simple dropdowns for the vibe and country filters, and small laptops get a compact entry screen, so nothing gets cut off, squashed or overlapped.
 - **Help in plain words:** if location is blocked, the app shows step-by-step instructions for the browser you're using.
 - **Accessibility:** works with reduced motion, keyboard (Escape closes menus) and screen readers (labels on all buttons).
 
@@ -82,6 +82,29 @@ Ranked from most to least serious. ✅ = fixed.
 - **Vibes:** Just chatting, Music, Can't sleep, Travel stories, Study buddy, Need advice. They show on the dots, you can filter by them, and they give you a conversation starter when you connect.
 - **Find someone:** picks someone who matches your filters (vibe and country) and shows them first. For example: "Feeling just chatting, same as you · less than 10 km away · Angeles, Philippines". Then you choose Say hello or Skip.
 - **More life:** live activity on the entry globe, "In a call" tags, a ring for incoming calls, reactions, replies, pinned messages, and themes.
+
+**All features at a glance**
+
+| Feature | What it does |
+|---|---|
+| Blurred video | Video starts blurred on both sides. You tap **Show me** when you're ready; you can blur yourself again any time |
+| Who can find you | Girl / Boy / Prefer not to say, and Girls / Boys / Anyone. Must match both ways. Change it any time with the "Looking for" switch |
+| Photos | Sent directly to the other person, location data removed, blurred until tapped, up to 5 MB |
+| Voice notes | Tap the mic to record, up to 60 seconds, sent directly, never autoplay |
+| Reactions | ❤️ 😆 😮 😢 😡 👍 on any message (double-click to heart) |
+| Reply | Reply to a specific message; it's shown as a quote |
+| Pin | Pin up to 5 messages for both people, then tap the pinned bar to jump to one |
+| Undo send | Remove your message within 30 seconds; after that it says you can't |
+| Leave check | "Leave this chat?" before ending, plus a warning on refresh |
+| Vibes | Your mood, shown on your dot, filterable, with a conversation starter |
+| Find someone | Searches your filters, then shows who it found (vibe, distance, city) or says no one's around |
+| Country filter | Show only people in one of 20 major countries |
+| Live globe | Before joining you see real activity: available, in a call, waiting |
+| In a call | Busy people are tagged and can't be called |
+| Ringing | A soft ring when someone wants to chat or video call |
+| Chat during video | The chat stays beside the video (or opens over it on phones) |
+| Themes | Graphite, Navy or Cozy clay; the globe changes too |
+| Location help | Step-by-step help for your browser if location is blocked |
 
 **Why these:** each one answers a question a new user has. *Who's here? What are they in the mood for? Is it safe to turn on my camera? Who can see me?*
 
