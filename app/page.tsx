@@ -12,6 +12,7 @@ import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
 import { distanceKm, formatDistance, placeName } from "@/lib/geo";
+import { startRing } from "@/lib/ring";
 import { type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
@@ -424,6 +425,10 @@ export default function Home() {
     setMyLocation(placed);
     setPhase("live");
   }
+
+  // Ring while someone is asking for us: a chat request or a video call.
+  const ringing = conn.kind === "incoming" || video === "incoming";
+  useEffect(() => (ringing ? startRing() : undefined), [ringing]);
 
   const livePeerId = conn.kind === "idle" ? null : conn.peerId;
   const livePeer = peers.find((p) => p.id === livePeerId);
