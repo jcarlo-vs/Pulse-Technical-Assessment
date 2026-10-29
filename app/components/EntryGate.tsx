@@ -281,9 +281,9 @@ function LocationHelp({ onRetry }: { onRetry: () => void }) {
           "Also allow this site in the browser's own site settings, then come back and tap Try again.",
         ]
       : [
-          "Tap the page menu (aA or ⋯) next to the web address.",
-          "Tap Website Settings, then set Location to Allow.",
-          "Still blocked? Open Settings › Privacy & Security › Location Services › Safari Websites, and choose While Using the App.",
+          "Open the iPhone Settings app › Privacy & Security › Location Services. Make sure it's On, then tap Safari Websites and choose While Using the App.",
+          "Back in Safari, tap aA next to the web address › Website Settings › Location › Allow.",
+          "Close this tab and open the link again. Safari keeps the old answer until the page is freshly loaded.",
         ]
     : /Android/.test(ua)
       ? [
