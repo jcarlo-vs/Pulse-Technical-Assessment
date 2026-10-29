@@ -22,8 +22,10 @@ export async function POST(request: NextRequest) {
 
   // Independent cleanup deletes — no atomicity needed (and interactive
   // transactions are unreliable over a PgBouncer pooler).
+  // Keep outgoing "end" signals: they tell the partner we hung up, and the
+  // leave beacon can land before the partner has polled them.
   await prisma.signal.deleteMany({
-    where: { OR: [{ toId: id }, { fromId: id }] },
+    where: { OR: [{ toId: id }, { fromId: id, type: { not: "end" } }] },
   });
   await prisma.presence.deleteMany({ where: { id } });
 

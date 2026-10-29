@@ -34,17 +34,24 @@ export async function sendSignal(
   });
 }
 
-// Fire-and-forget leave that survives the tab closing.
-export function leave(id: string): void {
-  const body = JSON.stringify({ id });
+// Fire-and-forget POST that survives the tab closing.
+function beacon(url: string, data: unknown): void {
+  const body = JSON.stringify(data);
   if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-    navigator.sendBeacon("/api/leave", body);
+    navigator.sendBeacon(url, body);
   } else {
-    void fetch("/api/leave", {
+    void fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
     });
   }
+}
+
+// Leave the map. If mid-connection, tell the partner first so their chat
+// closes immediately instead of hanging until WebRTC times out.
+export function leave(id: string, peerId?: string): void {
+  if (peerId) beacon("/api/signal", { fromId: id, toId: peerId, type: "end" });
+  beacon("/api/leave", { id });
 }
