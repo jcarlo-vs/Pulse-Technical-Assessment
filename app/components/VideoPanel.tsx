@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  EyeIcon,
-  EyeOffIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
@@ -17,19 +15,18 @@ export default function VideoPanel({
   remoteStream,
   privacy,
   onToggleShowMe,
-  onToggleSeeThem,
   onEnd,
 }: {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
-  privacy: { showMe: boolean; theyShow: boolean; seeThem: boolean };
+  privacy: { showMe: boolean; theyShow: boolean };
   onToggleShowMe: () => void;
-  onToggleSeeThem: () => void;
   onEnd: () => void;
 }) {
-  const { showMe, theyShow, seeThem } = privacy;
-  // Intro card until the user makes their first privacy choice.
-  const untouched = !showMe && !seeThem;
+  const { showMe, theyShow } = privacy;
+  // Intro card until the user shows themselves or dismisses it.
+  const [introDone, setIntroDone] = useState(false);
+  const showIntro = !introDone && !showMe;
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const [micOn, setMicOn] = useState(true);
@@ -67,13 +64,13 @@ export default function VideoPanel({
   return (
     <div className="anim-fade absolute inset-0 z-40 bg-black">
       {/* Remote (full screen) */}
-      {/* Blurred on *your* screen until you choose to see them, regardless of
-          what they send: a modified client can't flash you. */}
+      {/* Also blurred on *your* screen until they choose to show themselves,
+          regardless of what they send: a modified client can't flash you. */}
       <video
         ref={remoteRef}
         autoPlay
         playsInline
-        className={`h-full w-full object-cover transition-[filter] duration-700 ${seeThem ? "" : "scale-110 blur-2xl"}`}
+        className={`h-full w-full object-cover transition-[filter] duration-700 ${theyShow ? "" : "scale-110 blur-2xl"}`}
       />
       {!remoteStream && (
         <div className="absolute inset-0 grid place-items-center">
@@ -97,7 +94,7 @@ export default function VideoPanel({
         </p>
       )}
 
-      {remoteStream && untouched && (
+      {remoteStream && showIntro && (
         <div className="absolute inset-0 grid place-items-center p-6">
           <div className="glass-strong anim-rise w-full max-w-sm rounded-[28px] p-6 text-center">
             <span className="text-3xl" aria-hidden="true">🛡️</span>
@@ -105,16 +102,16 @@ export default function VideoPanel({
               Both cameras start blurred
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-ink-dim">
-              You can already hear each other. You decide when to show
-              yourself, and whether to see them clearly. Change either one
+              You can already hear each other. Nobody is seen clearly until
+              they choose to show themselves, and you can blur yourself again
               any time.
             </p>
             <div className="mt-5 flex gap-2">
               <button
-                onClick={onToggleSeeThem}
+                onClick={() => setIntroDone(true)}
                 className="btn-ghost h-12 flex-1 rounded-full text-sm font-medium"
               >
-                Unblur them
+                Not yet
               </button>
               <button
                 onClick={onToggleShowMe}
@@ -167,18 +164,10 @@ export default function VideoPanel({
         <LabeledToggle
           active={showMe}
           onClick={onToggleShowMe}
-          label={showMe ? "Hide me" : "Show me"}
+          label={showMe ? "Blur me" : "Show me"}
           hint={showMe ? "Blur my camera" : "Let them see me clearly"}
         >
           <ShieldIcon />
-        </LabeledToggle>
-        <LabeledToggle
-          active={seeThem}
-          onClick={onToggleSeeThem}
-          label={seeThem ? "Blur them" : "Unblur them"}
-          hint={seeThem ? "Blur their video on my screen" : "See them clearly"}
-        >
-          {seeThem ? <EyeIcon /> : <EyeOffIcon />}
         </LabeledToggle>
         <button
           onClick={onEnd}
@@ -220,8 +209,8 @@ function ControlButton({
   );
 }
 
-// Text-labelled on wider screens: these two are new concepts, so an icon
-// alone isn't enough.
+// Text-labelled on wider screens: a new concept, so an icon alone isn't
+// enough.
 function LabeledToggle({
   active,
   onClick,

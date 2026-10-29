@@ -7,6 +7,7 @@ import VibeFilter from "./components/VibeFilter";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
+import { VideoIcon } from "./components/icons";
 import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
@@ -28,8 +29,8 @@ type VideoState = "none" | "requesting" | "incoming" | "active";
 // independently: whether to show themselves (blurred at the source, so it's
 // enforced on their own device) and whether to see the other person clearly
 // (a local-only blur on their own screen). Nobody can unblur someone else.
-type Privacy = { showMe: boolean; theyShow: boolean; seeThem: boolean };
-const HIDDEN: Privacy = { showMe: false, theyShow: false, seeThem: false };
+type Privacy = { showMe: boolean; theyShow: boolean };
+const HIDDEN: Privacy = { showMe: false, theyShow: false };
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -310,9 +311,6 @@ export default function Home() {
     setPrivacy({ ...privacyRef.current, showMe });
   }
 
-  function toggleSeeThem() {
-    setPrivacy({ ...privacyRef.current, seeThem: !privacyRef.current.seeThem });
-  }
 
   function processSignal(sig: SignalMsg) {
     switch (sig.type) {
@@ -616,7 +614,7 @@ export default function Home() {
           acceptLabel="Accept"
           declineLabel="Decline"
           color={color}
-          icon={<span className="text-2xl">🛡️</span>}
+          icon={<VideoIcon width={26} height={26} />}
           onAccept={acceptVideo}
           onDecline={declineVideo}
         />
@@ -628,7 +626,6 @@ export default function Home() {
           remoteStream={remoteStream}
           privacy={privacy}
           onToggleShowMe={toggleShowMe}
-          onToggleSeeThem={toggleSeeThem}
           onEnd={endVideo}
         />
       )}
