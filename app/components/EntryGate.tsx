@@ -86,7 +86,7 @@ export default function EntryGate({
     // 1320px), so wide screens don't strand the panel at the far edge. The
     // map pads its right side by the same panel width (WorldMap).
     <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,color-mix(in_srgb,var(--bg)_97%,transparent)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
-      {counts && <Activity counts={counts} />}
+      {counts && <Activity counts={counts} className="hidden md:flex" />}
       <div className="w-full md:flex md:max-w-[1320px] md:justify-end">
       <div className="anim-rise pointer-events-auto w-full md:w-[min(600px,48vw)] md:overflow-hidden md:rounded-[32px] md:border md:border-line md:bg-[var(--panel)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:backdrop-blur-xl">
       <div className="scroll-slim max-h-[100dvh] overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:flex-col md:justify-center md:px-12 md:py-10 md:[&>*]:shrink-0 short:md:py-6">
@@ -94,6 +94,8 @@ export default function EntryGate({
           <Wordmark />
           <ThemePicker />
         </div>
+        {/* Phones: the live counts sit in the flow, never over the steps. */}
+        {counts && <Activity counts={counts} className="mt-3 flex w-fit md:hidden" />}
         <h2 className="mt-3 text-balance text-[24px] font-semibold sm:mt-4 sm:text-[28px] leading-[1.1] tracking-tight md:mt-6 md:text-[44px] short:md:mt-3 short:md:text-[34px] tiny:md:text-[28px]">
           Talk to someone, somewhere, right now.
         </h2>
@@ -214,12 +216,12 @@ const CTA: Record<VibeId, string> = {
 
 // Live, real counts under the globe: the page promises every dot is a real
 // person, so nothing here is simulated. Empty is said out loud.
-function Activity({ counts }: { counts: Glance["counts"] }) {
+function Activity({ counts, className = "" }: { counts: Glance["counts"]; className?: string }) {
   const total = counts.available + counts.inCall + counts.waiting;
   return (
     <div
       aria-live="polite"
-      className="glass anim-fade pointer-events-auto absolute left-1/2 top-[max(1rem,env(safe-area-inset-top))] flex -translate-x-1/2 flex-wrap items-center justify-center gap-x-4 gap-y-1 whitespace-nowrap rounded-full px-4 py-2 text-xs text-ink-dim md:bottom-8 md:left-[calc((100vw-min(600px,48vw))/2)] md:top-auto md:text-sm"
+      className={`glass anim-fade pointer-events-auto flex-wrap items-center justify-center gap-x-4 gap-y-1 whitespace-nowrap rounded-full px-4 py-2 text-xs text-ink-dim md:absolute md:bottom-8 md:left-[calc((100vw-min(600px,48vw))/2)] md:-translate-x-1/2 md:text-sm ${className}`}
     >
       {total === 0 ? (
         <span>Nobody here yet. Be the first to light up the globe.</span>
@@ -251,12 +253,29 @@ function Count({ color, n, label, pulse }: { color: string; n: number; label: st
 function LocationHelp({ onRetry }: { onRetry: () => void }) {
   const ua = navigator.userAgent;
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  // Other iPhone browsers (Chrome, Firefox, Edge, Arc...) also need the
+  // iPhone's own permission for the app, which a site setting can't grant.
+  const iosApp = /CriOS/.test(ua)
+    ? "Chrome"
+    : /FxiOS/.test(ua)
+      ? "Firefox"
+      : /EdgiOS/.test(ua)
+        ? "Edge"
+        : /Safari/.test(ua) && !/OPiOS|GSA|DuckDuckGo/.test(ua)
+          ? null
+          : "your browser app";
   const steps = ios
-    ? [
-        "Tap the page menu (aA or ⋯) next to the web address.",
-        "Tap Website Settings, then set Location to Allow.",
-        "Still blocked? Open Settings › Privacy & Security › Location Services › Safari Websites, and choose While Using the App.",
-      ]
+    ? iosApp
+      ? [
+          `Open the iPhone Settings app, scroll down and tap ${iosApp}.`,
+          "Tap Location, choose While Using the App, and turn on Precise Location.",
+          "Also allow this site in the browser's own site settings, then come back and tap Try again.",
+        ]
+      : [
+          "Tap the page menu (aA or ⋯) next to the web address.",
+          "Tap Website Settings, then set Location to Allow.",
+          "Still blocked? Open Settings › Privacy & Security › Location Services › Safari Websites, and choose While Using the App.",
+        ]
     : /Android/.test(ua)
       ? [
           "Tap the icon to the left of the web address (🔒 or ⓘ).",
