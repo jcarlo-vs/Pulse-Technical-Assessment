@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GhostIcon, PinIcon, ShieldIcon } from "./icons";
 import { DEFAULT_VIBE, VIBES, type VibeId } from "@/lib/vibes";
 import {
@@ -43,6 +43,15 @@ export default function EntryGate({
       setSlow(false);
     };
   }, [status]);
+
+  // Show the scrollbar only while the panel is being scrolled.
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function flashScrollbar(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    el.classList.add("is-scrolling");
+    clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => el.classList.remove("is-scrolling"), 900);
+  }
 
   function fail(message: string, blocked = false) {
     setStatus("error");
@@ -88,15 +97,15 @@ export default function EntryGate({
     <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,color-mix(in_srgb,var(--bg)_97%,transparent)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
       {counts && <Activity counts={counts} className="hidden md:flex" />}
       <div className="w-full md:flex md:max-w-[1320px] md:justify-end">
-      <div className="anim-rise pointer-events-auto w-full md:w-[min(600px,48vw)] md:overflow-hidden md:rounded-[32px] md:border md:border-line md:bg-[var(--panel)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:backdrop-blur-xl">
-      <div className="scroll-slim max-h-[100dvh] overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:flex-col md:justify-center md:px-12 md:py-10 md:[&>*]:shrink-0 short:md:py-6">
+      <div className="anim-rise pointer-events-auto w-full md:w-[min(560px,45vw)] md:overflow-hidden md:rounded-[32px] md:border md:border-line md:bg-[var(--panel)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:backdrop-blur-xl">
+      <div onScroll={flashScrollbar} className="scroll-slim scroll-auto max-h-[100dvh] overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:flex-col md:justify-center md:px-10 md:py-8 md:[&>*]:shrink-0 short:md:py-6">
         <div className="flex items-center justify-between gap-3">
           <Wordmark />
           <ThemePicker />
         </div>
         {/* Phones: the live counts sit in the flow, never over the steps. */}
         {counts && <Activity counts={counts} className="mt-3 flex w-fit md:hidden" />}
-        <h2 className="mt-3 text-balance text-[24px] font-semibold sm:mt-4 sm:text-[28px] leading-[1.1] tracking-tight md:mt-6 md:text-[44px] short:md:mt-3 short:md:text-[34px] tiny:md:text-[28px]">
+        <h2 className="mt-3 text-balance text-[24px] font-semibold sm:mt-4 sm:text-[28px] leading-[1.1] tracking-tight md:mt-6 md:text-[38px] short:md:mt-3 short:md:text-[31px] tiny:md:text-[27px]">
           Talk to someone, somewhere, right now.
         </h2>
 
@@ -113,7 +122,7 @@ export default function EntryGate({
                       type="button"
                       onClick={() => setVibe(v.id)}
                       aria-pressed={active}
-                      className="glass flex h-10 items-center gap-2 rounded-2xl px-3 text-left text-[13px] sm:h-11 short:sm:h-9 transition hover:bg-white/10"
+                      className="glass flex h-10 items-center gap-1.5 rounded-2xl px-2.5 text-left text-[13px] sm:h-11 short:sm:h-9 transition hover:bg-white/10"
                       style={
                         active
                           ? {
@@ -221,7 +230,7 @@ function Activity({ counts, className = "" }: { counts: Glance["counts"]; classN
   return (
     <div
       aria-live="polite"
-      className={`glass anim-fade pointer-events-auto flex-wrap items-center justify-center gap-x-4 gap-y-1 whitespace-nowrap rounded-full px-4 py-2 text-xs text-ink-dim md:absolute md:bottom-8 md:left-[calc((100vw-min(600px,48vw))/2)] md:-translate-x-1/2 md:text-sm ${className}`}
+      className={`glass anim-fade pointer-events-auto flex-wrap items-center justify-center gap-x-4 gap-y-1 whitespace-nowrap rounded-full px-4 py-2 text-xs text-ink-dim md:absolute md:bottom-8 md:left-[calc((100vw-min(560px,45vw))/2)] md:-translate-x-1/2 md:text-sm ${className}`}
     >
       {total === 0 ? (
         <span>Nobody here yet. Be the first to light up the globe.</span>
@@ -345,8 +354,8 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex items-center gap-2">
-      <span className="w-14 shrink-0 text-xs text-ink-faint">{label}</span>
+    <div role="radiogroup" aria-label={label} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+      <span className="shrink-0 text-xs text-ink-faint sm:w-14">{label}</span>
       <div className="glass flex flex-1 gap-1 rounded-full p-1">
         {options.map((o) => (
           <button
@@ -355,7 +364,8 @@ function Segmented<T extends string>({
             role="radio"
             aria-checked={value === o.id}
             onClick={() => onChange(o.id)}
-            className={`h-9 flex-1 truncate rounded-full px-2 text-[13px] transition ${
+            // Sized to their text, so "Prefer not to say" is never cut off.
+            className={`h-9 flex-auto whitespace-nowrap rounded-full px-3 text-[13px] transition ${
               value === o.id ? "bg-white font-medium text-black" : "text-ink-dim hover:text-ink"
             }`}
           >

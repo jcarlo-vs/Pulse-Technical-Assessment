@@ -495,6 +495,21 @@ body {
 .scroll-slim::-webkit-scrollbar-track {
   background: transparent;
 }
+/* Hidden until the user actually scrolls (JS toggles .is-scrolling), like
+   phone and macOS overlay scrollbars. */
+.scroll-auto {
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s;
+}
+.scroll-auto.is-scrolling {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.scroll-auto::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.scroll-auto.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
 .anim-drop {
   animation: drop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

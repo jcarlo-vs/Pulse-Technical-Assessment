@@ -107,7 +107,7 @@ export default function WorldMap({
       const desktop = window.innerWidth >= 768;
       map.setPadding(
         desktop
-          ? { top: 0, bottom: 0, left: 0, right: Math.min(600, window.innerWidth * 0.48) }
+          ? { top: 0, bottom: 0, left: 0, right: Math.min(560, window.innerWidth * 0.45) }
           : { top: 0, left: 0, right: 0, bottom: window.innerHeight * 0.55 },
       );
       map.addControl(
