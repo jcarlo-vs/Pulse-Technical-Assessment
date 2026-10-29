@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import EntryGate from "./components/EntryGate";
-import WorldMap from "./components/WorldMap";
+import WorldMap, { peerColor } from "./components/WorldMap";
+import { VideoIcon } from "./components/icons";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
@@ -27,7 +28,9 @@ export default function Home() {
   const [sessionId] = useState(() => crypto.randomUUID());
   const [peers, setPeers] = useState<PeerDot[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(
+    null,
+  );
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(
@@ -55,8 +58,12 @@ export default function Home() {
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showNotice(text: string) {
-    setNotice(text);
-    window.setTimeout(() => setNotice(null), 3500);
+    const id = Date.now();
+    setNotice({ id, text });
+    window.setTimeout(
+      () => setNotice((n) => (n?.id === id ? null : n)),
+      3500,
+    );
   }
 
   function addMessage(mine: boolean, text: string) {
@@ -284,7 +291,7 @@ export default function Home() {
         if (!data) {
           if (myLocationRef.current) {
             const { lat, lng } = myLocationRef.current;
-            await join(sessionId, lat, lng);
+            setMyLocation(await join(sessionId, lat, lng));
           }
         } else {
           setPeers(data.peers);
@@ -316,20 +323,20 @@ export default function Home() {
   }, [sessionId, phase]);
 
   async function handleReady(lat: number, lng: number) {
-    setMyLocation({ lat, lng });
     myLocationRef.current = { lat, lng };
-    await join(sessionId, lat, lng);
+    // Show the user the offset position others see, not their exact spot.
+    setMyLocation(await join(sessionId, lat, lng));
     setPhase("live");
   }
 
-  if (phase === "gate") {
-    return <EntryGate onReady={handleReady} />;
-  }
-
+  const live = phase === "live";
   const inChat = conn.kind === "connecting" || conn.kind === "connected";
+  const peerId = conn.kind === "idle" ? null : conn.peerId;
+  const color = peerId ? peerColor(peerId) : "var(--accent)";
+  const available = peers.filter((p) => !p.busy).length;
 
   return (
-    <main className="fixed inset-0 overflow-hidden">
+    <main className="fixed inset-0 overflow-hidden bg-bg">
       <WorldMap
         peers={peers}
         me={myLocation}
@@ -337,29 +344,93 @@ export default function Home() {
         canConnect={conn.kind === "idle"}
       />
 
+      {!live && <EntryGate onReady={handleReady} />}
+
+      {live && (
+        <header className={`anim-fade pointer-events-none absolute inset-x-0 top-0 z-20 ${inChat ? "md:right-[420px]" : ""} flex items-start justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))]`}>
+          <div className="glass pointer-events-auto flex items-center gap-2 rounded-full py-2 pl-3 pr-4">
+            <span className="relative grid size-2.5 place-items-center">
+              <span className="absolute size-full animate-ping rounded-full bg-accent opacity-60" />
+              <span className="size-2.5 rounded-full bg-accent" />
+            </span>
+            <span className="text-sm font-semibold tracking-tight">Pulse</span>
+          </div>
+          <div
+            className="glass pointer-events-auto rounded-full px-4 py-2 text-sm"
+            aria-live="polite"
+          >
+            <span className="font-semibold tabular-nums text-ink">
+              {peers.length}
+            </span>{" "}
+            <span className="text-ink-dim">
+              {peers.length === 1 ? "other person" : "other people"} online
+            </span>
+          </div>
+        </header>
+      )}
+
+      {live && conn.kind === "idle" && (
+        <p className="glass anim-rise pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-sm text-ink-dim">
+          {peers.length === 0
+            ? "It's quiet right now. Your dot is live, so someone may find you."
+            : available === 0
+              ? "Everyone's mid-conversation. Hang tight."
+              : "Tap a glowing dot to say hello"}
+        </p>
+      )}
+
       {notice && (
-        <div className="absolute left-1/2 top-20 z-30 -translate-x-1/2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
-          {notice}
+        <div
+          key={notice.id}
+          role="status"
+          className="glass-strong anim-drop absolute left-1/2 top-20 z-[60] -translate-x-1/2 rounded-full px-5 py-2.5 text-sm font-medium"
+        >
+          {notice.text}
         </div>
       )}
 
       {conn.kind === "requesting" && (
-        <div className="absolute left-1/2 top-20 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
-          <span>Requesting connection…</span>
-          <button
-            onClick={cancelRequest}
-            className="rounded-full bg-zinc-700 px-3 py-1 text-xs hover:bg-zinc-600"
-          >
-            Cancel
-          </button>
+        <div className="glass-strong anim-rise absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 overflow-hidden rounded-3xl">
+          <div className="flex items-center gap-4 p-4">
+            <span
+              className="radar relative grid size-11 shrink-0 place-items-center rounded-full"
+              style={{ ["--accent" as string]: color }}
+            >
+              <span
+                className="size-4 rounded-full"
+                style={{ background: color, boxShadow: `0 0 16px ${color}` }}
+              />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Calling a stranger…</p>
+              <p className="text-xs text-ink-dim">
+                Waiting for them to accept
+              </p>
+            </div>
+            <button
+              onClick={cancelRequest}
+              className="btn-ghost h-10 rounded-full px-4 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+          <div
+            className="h-1 origin-left"
+            style={{
+              background: color,
+              animation: `countdown ${REQUEST_TIMEOUT_MS}ms linear forwards`,
+            }}
+          />
         </div>
       )}
 
       {conn.kind === "incoming" && (
         <ConnectionPrompt
-          title="A stranger wants to connect"
+          title="Someone wants to talk"
+          subtitle="A stranger nearby tapped your dot. Nothing is shared until you accept."
           acceptLabel="Accept"
-          declineLabel="Decline"
+          declineLabel="Not now"
+          color={color}
           onAccept={acceptIncoming}
           onDecline={declineIncoming}
         />
@@ -370,6 +441,7 @@ export default function Home() {
           messages={messages}
           connected={conn.kind === "connected"}
           videoBusy={video !== "none"}
+          color={color}
           onSend={(text) => {
             peerRef.current?.sendChat(text);
             addMessage(true, text);
@@ -380,17 +452,20 @@ export default function Home() {
       )}
 
       {video === "requesting" && (
-        <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
-          Waiting for stranger to accept video…
+        <div className="glass-strong anim-drop absolute left-1/2 top-20 z-[35] flex -translate-x-1/2 items-center gap-2.5 rounded-full px-5 py-2.5 text-sm md:left-[calc(50%-210px)]">
+          <span className="size-2 animate-pulse rounded-full bg-accent" />
+          Asking to start video…
         </div>
       )}
 
       {video === "incoming" && (
         <ConnectionPrompt
-          title="Start video call?"
-          subtitle="The stranger wants to turn on video."
-          acceptLabel="Accept"
-          declineLabel="Decline"
+          title="Start a video call?"
+          subtitle="Your camera and mic turn on only if you accept."
+          acceptLabel="Turn on camera"
+          declineLabel="Stay in chat"
+          color={color}
+          icon={<VideoIcon width={24} height={24} />}
           onAccept={acceptVideo}
           onDecline={declineVideo}
         />

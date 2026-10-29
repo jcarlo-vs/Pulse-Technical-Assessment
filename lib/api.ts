@@ -1,16 +1,20 @@
 // Client-side helpers for talking to the coordination API.
 import type { PollResponse, SignalType } from "@/lib/types";
 
+// Returns the privacy-offset position the server placed this user at.
 export async function join(
   id: string,
   lat: number,
   lng: number,
-): Promise<void> {
-  await fetch("/api/join", {
+): Promise<{ lat: number; lng: number }> {
+  const res = await fetch("/api/join", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, lat, lng }),
   });
+  if (!res.ok) throw new Error(`join failed: ${res.status}`);
+  const data = await res.json();
+  return { lat: data.lat, lng: data.lng };
 }
 
 // Returns null when the server no longer knows this session (caller must re-join).
