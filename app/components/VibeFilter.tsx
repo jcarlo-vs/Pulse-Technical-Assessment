@@ -20,12 +20,14 @@ export default function VibeFilter({
   onChange,
   country,
   onCountry,
+  online,
 }: {
   peers: PeerDot[];
   value: VibeId | null;
   onChange: (v: VibeId | null) => void;
   country: string | null;
   onCountry: (c: string | null) => void;
+  online: number;
 }) {
   const inCountry = country ? peers.filter((p) => p.country === country) : peers;
   const count = (id: VibeId) => inCountry.filter((p) => p.vibe === id).length;
@@ -33,8 +35,18 @@ export default function VibeFilter({
   return (
     <nav
       aria-label="Filters"
-      className="anim-fade absolute inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-20 flex items-center gap-1.5 px-4 md:top-4 md:justify-center md:px-48"
+      className="anim-fade absolute inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+2rem)] z-20 flex items-center gap-1.5 px-4 md:top-4 md:justify-center md:px-48"
     >
+      {/* Phones: brand + online count live here, since some mobile browsers
+          (Chrome on iPhone) draw their toolbar over the very top. */}
+      <div
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-line bg-[var(--glass-strong)] px-2.5 text-xs font-semibold shadow-lg md:hidden"
+        aria-label={`Pulse, ${online} other ${online === 1 ? "person" : "people"} online`}
+      >
+        <span className="size-2 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" />
+        Pulse
+        <span className="rounded-full bg-white/[0.08] px-1.5 tabular-nums leading-5">{online}</span>
+      </div>
       <CountryPicker peers={peers} value={country} onChange={onCountry} />
       {/* Phones: one dropdown with names instead of a row of icons. */}
       <VibePicker value={value} onChange={onChange} count={count} total={inCountry.length} />
@@ -98,7 +110,7 @@ function VibePicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Vibe: ${current?.label ?? "All vibes"}`}
-        className="flex h-9 max-w-full items-center gap-1.5 rounded-full border bg-[var(--glass-strong)] px-3 text-sm shadow-lg"
+        className="flex h-8 max-w-full items-center gap-1.5 rounded-full border bg-[var(--glass-strong)] px-2.5 text-[13px] shadow-lg md:h-9 md:px-3 md:text-sm"
         style={{ borderColor: current ? current.color : "var(--line)" }}
       >
         <span aria-hidden="true">{current?.emoji ?? "✨"}</span>
@@ -179,7 +191,7 @@ function CountryPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Country: ${value ? name.join(" ") : "Anywhere"}`}
-        className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-[var(--glass-strong)] px-3 text-sm shadow-lg"
+        className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-[var(--glass-strong)] px-2.5 text-[13px] shadow-lg md:h-9 md:px-3 md:text-sm"
         style={value ? { borderColor: "var(--accent)" } : undefined}
       >
         <span aria-hidden="true">{flag}</span>

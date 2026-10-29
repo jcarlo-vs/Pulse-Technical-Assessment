@@ -24,24 +24,35 @@ export function blurredCamera(
   source.srcObject = raw;
   void source.play().catch(() => {});
 
+  // The canvas follows the *actual* frame size (source.videoWidth/Height),
+  // not the track settings: phones report the sensor's landscape size while
+  // delivering portrait frames, which squashed the picture. Re-checked every
+  // frame, so rotating the phone mid-call stays natural too.
   const settings = raw.getVideoTracks()[0]?.getSettings() ?? {};
-  const w = settings.width ?? 640;
-  const h = settings.height ?? 480;
-
   const out = document.createElement("canvas");
-  out.width = w;
-  out.height = h;
+  out.width = settings.width ?? 640;
+  out.height = settings.height ?? 480;
   const ctx = out.getContext("2d")!;
 
   const tiny = document.createElement("canvas");
-  tiny.width = BLUR_WIDTH;
-  tiny.height = Math.max(1, Math.round((BLUR_WIDTH * h) / w));
   const tctx = tiny.getContext("2d")!;
+  const fit = (w: number, h: number) => {
+    if (out.width !== w || out.height !== h) {
+      out.width = w;
+      out.height = h;
+    }
+    tiny.width = BLUR_WIDTH;
+    tiny.height = Math.max(1, Math.round((BLUR_WIDTH * h) / w));
+  };
+  fit(out.width, out.height);
 
   // ponytail: setInterval is throttled to ~1fps in background tabs; fine for a
   // call you're looking at. Upgrade to requestVideoFrameCallback if needed.
   const timer = setInterval(() => {
     if (source.readyState < 2) return;
+    const w = source.videoWidth || out.width;
+    const h = source.videoHeight || out.height;
+    if (w !== out.width || h !== out.height) fit(w, h);
     if (isClear()) {
       ctx.drawImage(source, 0, 0, w, h);
     } else {

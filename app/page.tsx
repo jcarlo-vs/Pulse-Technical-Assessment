@@ -8,6 +8,7 @@ import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
 import ThemePicker from "./components/ThemePicker";
+import { Search } from "lucide-react";
 import { CloseIcon, PhoneOffIcon, VideoIcon } from "./components/icons";
 import { join, leave, newSecret, poll, sendSignal, type Profile } from "@/lib/api";
 import { DEFAULT_GENDER, DEFAULT_SEEKING, SEEKING, type Seeking } from "@/lib/match";
@@ -22,6 +23,7 @@ import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
 import { countryCode, countryLabel, distanceKm, formatDistance, placeName } from "@/lib/geo";
 import { startRing } from "@/lib/ring";
+import { explainMediaError, type MediaHelp } from "@/lib/media";
 import { type Glance, type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
@@ -89,13 +91,18 @@ export default function Home() {
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [found, setFound] = useState<string | null>(null);
   const [scan, setScan] = useState<"idle" | "scanning" | "empty">("idle");
+  // What would get a result when a search comes up empty.
+  const [hint, setHint] = useState<{ kind: "filters" | "anyone"; n: number } | null>(null);
   const scanTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scanRun = useRef(0);
   const peersRef = useRef<PeerDot[]>([]);
   // Phones: chat opens as a sheet over the video (desktop shows it beside).
   const [chatOverVideo, setChatOverVideo] = useState(false);
   const [unread, setUnread] = useState(false);
   const [pinned, setPinned] = useState<string[]>([]);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  // Why the camera/mic couldn't start, with steps; stays until dismissed.
+  const [mediaHelp, setMediaHelp] = useState<MediaHelp | null>(null);
   // Coarse live activity for the entry screen (before joining).
   const [glance, setGlance] = useState<Glance | null>(null);
   const skipped = useRef<Set<string>>(new Set());
@@ -260,10 +267,10 @@ export default function Home() {
               setLocalStream(stream);
               setVideo("active");
             })
-            .catch(() => {
+            .catch((e) => {
               setVideo("none");
               ps.sendControl("video-end");
-              showNotice("Camera unavailable.");
+              setMediaHelp(explainMediaError(e));
             });
         }
         break;
@@ -314,27 +321,62 @@ export default function Home() {
   // "Find someone" always works: a short search, then either a match
   // preview or an honest "no one's around". Reads peers through a ref, since
   // the list may change while it searches.
-  function findSomeone() {
+  // `opts` overrides the filters for this search (used right after the user
+  // relaxes them, before React has re-rendered with the new values).
+  // `until`: keep re-checking (while the server applies a new setting)
+  // instead of giving up on the first empty look.
+  type SearchOpts = { vibe?: VibeId | null; country?: string | null; until?: number };
+  function findSomeone(opts: SearchOpts = {}) {
     setFound(null);
+    setHint(null);
     setScan("scanning");
     clearTimeout(scanTimer.current);
-    scanTimer.current = setTimeout(pickSomeone, 1500);
+    const run = ++scanRun.current;
+    scanTimer.current = setTimeout(() => void pickSomeone(opts, run), 1500);
   }
 
-  function pickSomeone() {
-    const free = peersRef.current.filter(
-      (p) =>
-        !p.busy &&
-        (!filter || p.vibe === filter) &&
-        (!countryFilter || p.country === countryFilter),
-    );
-    let pool = free.filter((p) => !skipped.current.has(p.id));
-    if (pool.length === 0) {
-      skipped.current.clear(); // seen everyone: start the round again
-      pool = free;
+  async function pickSomeone(opts: SearchOpts, run: number) {
+    const vibe = opts.vibe !== undefined ? opts.vibe : filter;
+    const country = opts.country !== undefined ? opts.country : countryFilter;
+    const isFree = (p: PeerDot) => !p.busy;
+    const choose = () => {
+      const free = peersRef.current.filter(
+        (p) => isFree(p) && (!vibe || p.vibe === vibe) && (!country || p.country === country),
+      );
+      let pool = free.filter((p) => !skipped.current.has(p.id));
+      if (pool.length === 0) {
+        skipped.current.clear(); // seen everyone: start the round again
+        pool = free;
+      }
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+    let pick = choose();
+    // Keep looking while the server applies a just-changed setting.
+    while (!pick && opts.until && performance.now() < opts.until) {
+      await new Promise((r) => setTimeout(r, 700));
+      if (run !== scanRun.current) return; // cancelled or restarted
+      pick = choose();
     }
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    if (!pick) return setScan("empty");
+    if (!pick) {
+      // Nobody fits. Say what would help, if anything:
+      // 1) people are free, just not with these filters;
+      const anyFree = peersRef.current.filter(isFree).length;
+      if ((vibe || country) && anyFree > 0) {
+        setHint({ kind: "filters", n: anyFree });
+      } else if (profileRef.current.seeking !== "any") {
+        // 2) people are free but outside "Looking for". The server never
+        //    sends them (matching is mutual), so compare with the public,
+        //    anonymous count of free people; only a number is revealed.
+        try {
+          const g: Glance = await fetch("/api/glance", { cache: "no-store" }).then((r) => r.json());
+          const hidden = g.counts.available - 1 - anyFree; // minus me
+          if (hidden > 0) setHint({ kind: "anyone", n: hidden });
+        } catch {}
+      }
+      if (run !== scanRun.current) return;
+      return setScan("empty");
+    }
+    if (run !== scanRun.current) return;
     setScan("idle");
     setFocus({ lat: pick.lat, lng: pick.lng });
     setFound(pick.id);
@@ -342,6 +384,7 @@ export default function Home() {
 
   function stopScan() {
     clearTimeout(scanTimer.current);
+    scanRun.current++;
     setScan("idle");
   }
 
@@ -401,10 +444,10 @@ export default function Home() {
         ps.sendControl("video-accept");
         setVideo("active");
       })
-      .catch(() => {
+      .catch((e) => {
         ps.sendControl("video-decline");
         setVideo("none");
-        showNotice("Camera unavailable.");
+        setMediaHelp(explainMediaError(e));
       });
   }
 
@@ -626,7 +669,7 @@ export default function Home() {
       {!live && <EntryGate onReady={handleReady} counts={glance?.counts} />}
 
       {live && (
-        <header className={`anim-fade pointer-events-none absolute inset-x-0 top-0 z-20 ${inChat ? "md:right-[420px]" : ""} flex items-start justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))]`}>
+        <header className={`anim-fade pointer-events-none absolute inset-x-0 top-0 z-20 ${inChat ? "md:right-[420px]" : ""} hidden items-start md:flex justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))]`}>
           <div className="glass pointer-events-auto flex items-center gap-2 rounded-full py-2 pl-3 pr-4">
             <span className="relative grid size-2.5 place-items-center">
               <span className="absolute size-full animate-ping rounded-full bg-accent opacity-60" />
@@ -659,6 +702,7 @@ export default function Home() {
           onChange={setFilter}
           country={countryFilter}
           onCountry={setCountryFilter}
+          online={peers.length}
         />
       )}
 
@@ -668,16 +712,20 @@ export default function Home() {
         <div className="anim-rise absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 z-10 flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 flex-col items-center gap-2">
           <div className="flex flex-wrap items-center justify-center gap-2">
           <button
-            onClick={findSomeone}
-            className="btn-primary flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
+            onClick={() => findSomeone()}
+            className="btn-primary flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm md:h-11 md:px-5"
           >
-            <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
+            {filter ? (
+              <span aria-hidden="true">{vibeOf(filter).emoji}</span>
+            ) : (
+              <Search size={17} strokeWidth={2.5} aria-hidden="true" />
+            )}
             {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
           </button>
           <div
             role="radiogroup"
             aria-label="Looking for"
-            className="glass flex h-11 items-center gap-1 rounded-full p-1 text-sm"
+            className="glass flex h-10 items-center gap-1 rounded-full p-1 text-[13px] md:h-11 md:text-sm"
           >
             <span className="hidden pl-3 pr-1 text-xs text-ink-faint sm:inline">Looking for</span>
             {SEEKING.map((o) => (
@@ -686,7 +734,7 @@ export default function Home() {
                 role="radio"
                 aria-checked={seeking === o.id}
                 onClick={() => setSeeking(o.id)}
-                className={`h-9 rounded-full px-3.5 transition ${
+                className={`h-8 rounded-full px-3 transition md:h-9 md:px-3.5 ${
                   seeking === o.id ? "bg-white text-black" : "text-ink-dim hover:text-ink"
                 }`}
               >
@@ -733,12 +781,19 @@ export default function Home() {
                   🌙
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">No one&rsquo;s around right now</p>
+                  <p className="font-semibold">
+                    {hint?.kind === "filters"
+                      ? `No one ${searchLabel.toLowerCase()} right now`
+                      : hint?.kind === "anyone"
+                        ? `No ${SEEKING.find((o) => o.id === seeking)?.label.toLowerCase()} free right now`
+                        : "No one\u2019s around right now"}
+                  </p>
                   <p className="mt-0.5 text-sm text-ink-dim">
-                    {filter || countryFilter
-                      ? `Nobody ${searchLabel.toLowerCase()} is free at the moment.`
-                      : "Nobody is free to chat at the moment."}{" "}
-                    Your dot is live, so someone may find you.
+                    {hint?.kind === "filters"
+                      ? `But ${hint.n} ${hint.n === 1 ? "person is" : "people are"} free with other vibes or countries.`
+                      : hint?.kind === "anyone"
+                        ? `But ${hint.n} ${hint.n === 1 ? "person is" : "people are"} free outside your \u201cLooking for\u201d. Switch to Anyone to meet them.`
+                        : "Your dot is live, so someone may find you. Try again in a bit."}
                   </p>
                 </div>
                 <button onClick={stopScan} aria-label="Close" className="btn-ghost grid size-9 shrink-0 place-items-center rounded-full">
@@ -746,21 +801,36 @@ export default function Home() {
                 </button>
               </div>
               <div className="mt-4 flex gap-2">
-                {(filter || countryFilter) && (
+                <button
+                  onClick={() => findSomeone()}
+                  className={`${hint ? "btn-ghost font-medium" : "btn-primary"} h-11 flex-1 rounded-full text-sm`}
+                >
+                  Try again
+                </button>
+                {hint?.kind === "filters" && (
                   <button
                     onClick={() => {
                       setFilter(null);
                       setCountryFilter(null);
-                      stopScan();
+                      findSomeone({ vibe: null, country: null });
                     }}
-                    className="btn-ghost h-11 flex-1 rounded-full text-sm font-medium"
+                    className="btn-primary h-11 flex-1 rounded-full text-sm"
                   >
-                    Clear filters
+                    Show everyone
                   </button>
                 )}
-                <button onClick={findSomeone} className="btn-primary h-11 flex-1 rounded-full text-sm">
-                  Try again
-                </button>
+                {hint?.kind === "anyone" && (
+                  <button
+                    onClick={() => {
+                      setSeeking("any");
+                      // The server applies it on the next poll or two.
+                      findSomeone({ until: performance.now() + 8000 });
+                    }}
+                    className="btn-primary h-11 flex-1 rounded-full text-sm"
+                  >
+                    Switch to Anyone
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -924,6 +994,39 @@ export default function Home() {
           onAccept={acceptVideo}
           onDecline={declineVideo}
         />
+      )}
+
+      {mediaHelp && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="media-help-title"
+          className="anim-fade absolute inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 md:items-center md:p-6"
+        >
+          <div className="glass-strong anim-rise w-full max-w-sm rounded-[28px] p-6">
+            <p id="media-help-title" className="flex items-center gap-2 text-lg font-semibold">
+              <span aria-hidden="true">📷</span> {mediaHelp.title}
+            </p>
+            <ol className="mt-4 space-y-2 text-sm text-ink-dim">
+              {mediaHelp.steps.map((step, i) => (
+                <li key={i} className="flex gap-2.5">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">
+                    {i + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 text-xs text-ink-faint">You&rsquo;re still connected, so you can keep chatting by text.</p>
+            <button
+              onClick={() => setMediaHelp(null)}
+              autoFocus
+              className="btn-primary mt-5 h-12 w-full rounded-full text-sm"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
 
       {confirmLeave && inChat && (

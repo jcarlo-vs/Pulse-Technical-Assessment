@@ -34,6 +34,9 @@ export default function VideoPanel({
   const showIntro = !introDone && !showMe;
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
+  // Muted, blurred copy of the remote video that fills the bars when the
+  // picture is a different shape from the screen (laptop video on a phone).
+  const backdropRef = useRef<HTMLVideoElement>(null);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
 
@@ -51,6 +54,11 @@ export default function VideoPanel({
       // stream attaches after mount; the user has already interacted
       // (tapped a dot, accepted), so an explicit play() is allowed.
       void el.play().catch(() => {});
+    }
+    const bg = backdropRef.current;
+    if (bg && bg.srcObject !== remoteStream) {
+      bg.srcObject = remoteStream;
+      void bg.play().catch(() => {});
     }
   }, [remoteStream]);
 
@@ -74,10 +82,20 @@ export default function VideoPanel({
       {/* Also blurred on *your* screen until they choose to show themselves,
           regardless of what they send: a modified client can't flash you. */}
       <video
+        ref={backdropRef}
+        autoPlay
+        playsInline
+        muted
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-3xl md:hidden"
+      />
+      {/* Phones show the whole picture (no zoomed-in crop of a wide laptop
+          camera), with the blurred copy behind it; wide screens fill. */}
+      <video
         ref={remoteRef}
         autoPlay
         playsInline
-        className={`h-full w-full object-cover transition-[filter] duration-700 ${theyShow ? "" : "scale-110 blur-2xl"}`}
+        className={`relative h-full w-full object-contain transition-[filter] duration-700 md:object-cover ${theyShow ? "" : "scale-110 blur-2xl"}`}
       />
       {!remoteStream && (
         <div className="absolute inset-0 grid place-items-center">
@@ -91,13 +109,11 @@ export default function VideoPanel({
       )}
 
       {remoteStream && (
-        <p className="glass anim-fade absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex max-w-[calc(100%-11rem)] items-center gap-2 rounded-full px-4 py-2 text-xs">
+        <p className="glass anim-fade absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex max-w-[calc(100%-11rem)] items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-xs">
           <span
             className={`size-1.5 rounded-full ${theyShow ? "bg-accent" : "bg-amber-300"}`}
           />
-          {theyShow
-            ? "Stranger is showing their camera"
-            : "Stranger is keeping their camera blurred"}
+          {theyShow ? "Stranger is visible" : "Stranger is blurred"}
         </p>
       )}
 

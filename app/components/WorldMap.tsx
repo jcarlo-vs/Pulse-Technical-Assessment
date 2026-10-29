@@ -313,7 +313,7 @@ export default function WorldMap({
           onClick={recenter}
           aria-label="Center on my location"
           title="Center on me"
-          className="glass btn-ghost absolute bottom-40 left-4 z-10 grid size-11 place-items-center rounded-full md:bottom-8"
+          className="glass btn-ghost absolute bottom-40 left-4 z-10 grid size-10 place-items-center rounded-full md:bottom-8 md:size-11"
         >
           <LocateIcon />
         </button>
