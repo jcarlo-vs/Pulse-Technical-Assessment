@@ -6,7 +6,7 @@ import type { PollResponse } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/poll?id= — the single endpoint that drives the live map.
+// GET /api/poll?id= - the single endpoint that drives the live map.
 // It (1) heartbeats the caller, (2) reaps stale presence + orphan signals,
 // (3) returns the filtered online peers, and (4) drains this user's mailbox.
 export async function GET(request: NextRequest) {
@@ -21,13 +21,13 @@ export async function GET(request: NextRequest) {
   const staleCutoff = new Date(now - STALE_MS);
   const signalCutoff = new Date(now - SIGNAL_TTL_MS);
 
-  // 1) Heartbeat — refresh lastSeen for the caller.
+  // 1) Heartbeat - refresh lastSeen for the caller.
   await prisma.presence.updateMany({
-    where: {},
+    where: { id },
     data: { lastSeen: new Date(now) },
   });
 
-  // 2) Reap stale presence rows and orphaned signals (independent deletes —
+  // 2) Reap stale presence rows and orphaned signals (independent deletes -
   // no atomicity needed, and avoids transactions over a PgBouncer pooler).
   await prisma.presence.deleteMany({ where: { lastSeen: { lt: staleCutoff } } });
   await prisma.signal.deleteMany({ where: { createdAt: { lt: signalCutoff } } });
