@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PhoneOffIcon, SendIcon, VideoIcon } from "./icons";
+import { ImageIcon, PhoneOffIcon, SendIcon, VideoIcon } from "./icons";
 import { MAX_CHAT_LEN } from "@/lib/webrtc";
 import type { Vibe } from "@/lib/vibes";
 
@@ -9,6 +9,7 @@ export interface ChatMessage {
   id: number;
   mine: boolean;
   text: string;
+  photo?: string; // object URL; the photo itself only ever lived in memory
 }
 
 // Bottom sheet on phones, floating side panel on desktop so the globe stays
@@ -21,6 +22,7 @@ export default function ChatPanel({
   vibe,
   icebreaker,
   onShuffle,
+  onSendPhoto,
   onSend,
   onStartVideo,
   onEnd,
@@ -32,6 +34,7 @@ export default function ChatPanel({
   vibe: Vibe;
   icebreaker: string;
   onShuffle: () => void;
+  onSendPhoto: (file: File) => void;
   onSend: (text: string) => void;
   onStartVideo: () => void;
   onEnd: () => void;
@@ -157,15 +160,19 @@ export default function ChatPanel({
               key={m.id}
               className={`anim-rise flex ${m.mine ? "justify-end" : "justify-start"} ${prevSame ? "" : "pt-2"}`}
             >
-              <span
-                className={`max-w-[80%] whitespace-pre-wrap break-words px-4 py-2.5 text-[15px] leading-snug ${
-                  m.mine
-                    ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[#5ee0f0] text-[#04120d]"
-                    : "rounded-[20px] rounded-bl-md bg-white/[0.08] text-ink"
-                }`}
-              >
-                {m.text}
-              </span>
+              {m.photo ? (
+                <Photo src={m.photo} mine={m.mine} />
+              ) : (
+                <span
+                  className={`max-w-[80%] whitespace-pre-wrap break-words px-4 py-2.5 text-[15px] leading-snug ${
+                    m.mine
+                      ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[#5ee0f0] text-[#04120d]"
+                      : "rounded-[20px] rounded-bl-md bg-white/[0.08] text-ink"
+                  }`}
+                >
+                  {m.text}
+                </span>
+              )}
             </div>
           );
         })}
@@ -176,6 +183,24 @@ export default function ChatPanel({
         onSubmit={submit}
         className="flex items-center gap-2 border-t border-line p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
+        <label
+          title="Send a photo (under 5 MB)"
+          className={`btn-ghost grid size-12 shrink-0 cursor-pointer place-items-center rounded-full ${connected ? "" : "pointer-events-none opacity-35"}`}
+        >
+          <ImageIcon />
+          <span className="sr-only">Send a photo</span>
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            disabled={!connected}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = ""; // allow re-sending the same file
+              if (file) onSendPhoto(file);
+            }}
+          />
+        </label>
         <input
           ref={inputRef}
           value={draft}
@@ -196,5 +221,31 @@ export default function ChatPanel({
         </button>
       </form>
     </section>
+  );
+}
+
+// Received photos arrive blurred: nobody gets surprised by an image they
+// didn't choose to see. Your own photos show as sent.
+function Photo({ src, mine }: { src: string; mine: boolean }) {
+  const [shown, setShown] = useState(mine);
+  return (
+    <button
+      type="button"
+      onClick={() => (shown ? window.open(src, "_blank", "noopener") : setShown(true))}
+      aria-label={shown ? "Open photo" : "Photo from stranger, tap to view"}
+      className={`relative max-w-[70%] overflow-hidden rounded-[20px] ${mine ? "rounded-br-md" : "rounded-bl-md"} border border-line`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- in-memory blob URL */}
+      <img
+        src={src}
+        alt=""
+        className={`block max-h-72 w-full object-cover transition duration-500 ${shown ? "" : "scale-110 blur-2xl"}`}
+      />
+      {!shown && (
+        <span className="absolute inset-0 grid place-items-center bg-black/30 text-sm font-medium text-white">
+          🛡️ Tap to view
+        </span>
+      )}
+    </button>
   );
 }

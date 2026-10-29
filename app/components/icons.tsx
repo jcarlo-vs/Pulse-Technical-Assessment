@@ -108,3 +108,11 @@ export const EyeOffIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20" />
   </Icon>
 );
+
+export const ImageIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="3" />
+    <circle cx="9" cy="10" r="1.8" />
+    <path d="m21 16-5-5-9 9" />
+  </Icon>
+);

@@ -10,6 +10,7 @@ import VideoPanel from "./components/VideoPanel";
 import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
+import { preparePhoto } from "@/lib/image";
 import { type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
@@ -78,6 +79,8 @@ export default function Home() {
   const myVibeRef = useRef<VibeId>(DEFAULT_VIBE);
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
+  // Object URLs for photos in the current chat; revoked when it ends.
+  const photoUrls = useRef<string[]>([]);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showNotice(text: string) {
@@ -89,8 +92,25 @@ export default function Home() {
     );
   }
 
-  function addMessage(mine: boolean, text: string) {
-    setMessages((prev) => [...prev, { id: msgId.current++, mine, text }]);
+  function addMessage(mine: boolean, text: string, photo?: Blob) {
+    let url: string | undefined;
+    if (photo) {
+      url = URL.createObjectURL(photo);
+      photoUrls.current.push(url);
+    }
+    setMessages((prev) => [...prev, { id: msgId.current++, mine, text, photo: url }]);
+  }
+
+  async function sendPhoto(file: File) {
+    const ps = peerRef.current;
+    if (!ps) return;
+    try {
+      const photo = await preparePhoto(file);
+      await ps.sendPhoto(photo);
+      addMessage(true, "", photo);
+    } catch (e) {
+      showNotice(e instanceof Error ? e.message : "Couldn't send that photo.");
+    }
   }
 
   function teardown(message?: string) {
@@ -101,6 +121,8 @@ export default function Home() {
     setRemoteStream(null);
     setVideo("none");
     setMessages([]);
+    photoUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    photoUrls.current = [];
     setConn({ kind: "idle" });
     if (message) showNotice(message);
   }
@@ -111,6 +133,7 @@ export default function Home() {
         void sendSignal(secret, peerId, type, payload);
       },
       onChat: (text) => addMessage(false, text),
+      onPhoto: (photo) => addMessage(false, "", photo),
       onControl: (ctrl) => handleControl(ctrl),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onConnectionState: (state) => {
@@ -500,6 +523,7 @@ export default function Home() {
           vibe={peerVibe}
           icebreaker={peerId ? icebreaker(peerVibe.id, peerId, promptTurn) : ""}
           onShuffle={() => setPromptTurn((t) => t + 1)}
+          onSendPhoto={sendPhoto}
           onSend={(text) => {
             peerRef.current?.sendChat(text);
             addMessage(true, text);
