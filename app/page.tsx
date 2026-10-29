@@ -48,6 +48,8 @@ export default function Home() {
     _setVideo(v);
   };
 
+  // Raw location, kept so the poll loop can re-join after being reaped.
+  const myLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -279,8 +281,15 @@ export default function Home() {
       try {
         const data = await poll(sessionId);
         if (!active) return;
-        setPeers(data.peers);
-        for (const s of data.signals) processSignalRef.current(s);
+        if (!data) {
+          if (myLocationRef.current) {
+            const { lat, lng } = myLocationRef.current;
+            await join(sessionId, lat, lng);
+          }
+        } else {
+          setPeers(data.peers);
+          for (const s of data.signals) processSignalRef.current(s);
+        }
       } catch {}
       if (active) timer = setTimeout(tick, POLL_INTERVAL_MS);
     };
@@ -308,6 +317,7 @@ export default function Home() {
 
   async function handleReady(lat: number, lng: number) {
     setMyLocation({ lat, lng });
+    myLocationRef.current = { lat, lng };
     await join(sessionId, lat, lng);
     setPhase("live");
   }
