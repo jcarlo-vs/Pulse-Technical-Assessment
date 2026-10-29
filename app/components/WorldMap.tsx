@@ -11,6 +11,42 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 const SPIN_DEG_PER_SEC = 3;
 
+// Recolour the stock dark style to the app's graphite: charcoal land on
+// near-black oceans, with lighter borders and labels so it still reads
+// as a living planet rather than a flat grey ball. Matched by layer type/id so
+// it survives Mapbox renaming individual layers.
+const GLOBE = {
+  land: "#3a3b40",
+  landShade: "#44454b",
+  water: "#121214",
+  border: "#8a8c94",
+  road: "#55575e",
+  label: "#e4e4e7",
+  halo: "#121214",
+};
+
+function tintGlobe(map: MapboxMap) {
+  const paint = map.setPaintProperty.bind(map) as (id: string, p: string, v: string) => void;
+  const set = (id: string, prop: string, value: string) => {
+    try {
+      paint(id, prop, value);
+    } catch {}
+  };
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.type === "background") set(l.id, "background-color", GLOBE.land);
+    else if (l.type === "fill") {
+      set(l.id, "fill-color", /water/.test(l.id) ? GLOBE.water : GLOBE.landShade);
+    } else if (l.type === "line") {
+      if (/water/.test(l.id)) set(l.id, "line-color", GLOBE.water);
+      else if (/admin|boundary/.test(l.id)) set(l.id, "line-color", GLOBE.border);
+      else set(l.id, "line-color", GLOBE.road);
+    } else if (l.type === "symbol") {
+      set(l.id, "text-color", GLOBE.label);
+      set(l.id, "text-halo-color", GLOBE.halo);
+    }
+  }
+}
+
 export default function WorldMap({
   peers,
   me,
@@ -83,12 +119,13 @@ export default function WorldMap({
 
       map.on("style.load", () => {
         map.setFog({
-          color: "rgb(14, 16, 34)",
-          "high-color": "rgb(48, 40, 120)",
-          "horizon-blend": 0.06,
-          "space-color": "rgb(5, 6, 13)",
+          color: "rgb(30, 31, 34)",
+          "high-color": "rgb(34, 58, 88)",
+          "horizon-blend": 0.025,
+          "space-color": "rgb(11, 11, 12)",
           "star-intensity": 0.7,
         });
+        tintGlobe(map);
       });
 
       // Idle rotation until the user lands (or touches the globe).

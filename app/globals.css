@@ -1,16 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #05060d;
-  --ink: #eef0ff;
-  --ink-dim: #9aa0c3;
-  --ink-faint: #5d6286;
-  --accent: #7cf5c8; /* mint "pulse" */
-  --accent-2: #8b7bff; /* violet */
-  --danger: #ff5d73;
-  --glass: rgba(16, 18, 34, 0.62);
-  --glass-strong: rgba(14, 16, 30, 0.86);
-  --line: rgba(255, 255, 255, 0.08);
+  /* Graphite: near-black ground, charcoal surfaces, one sky-blue accent. */
+  --bg: #0b0b0c;
+  --ink: #f4f4f5;
+  --ink-dim: #a7a7ad;
+  --ink-faint: #8a8a91;
+  --accent: #1d9bf0; /* sky blue */
+  --accent-2: #7cc4ff; /* light blue */
+  --accent-end: #4cb6ff; /* gradient partner of --accent */
+  --accent-ink: #ffffff; /* text on accent */
+  --danger: #f4212e;
+  --glass: rgba(28, 28, 31, 0.84);
+  --glass-strong: rgba(24, 24, 27, 0.96);
+  --line: rgba(255, 255, 255, 0.1);
+  /* Surfaces stay flat: just a faint top edge. */
+  --clay: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 @theme inline {
@@ -42,8 +47,8 @@ body {
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.05) inset,
-    0 20px 60px -20px rgba(0, 0, 0, 0.7);
+    var(--clay),
+    0 20px 50px -22px rgba(0, 0, 0, 0.55);
 }
 
 .glass-strong {
@@ -52,8 +57,8 @@ body {
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 30px 80px -24px rgba(0, 0, 0, 0.85);
+    var(--clay),
+    0 30px 80px -24px rgba(0, 0, 0, 0.65);
 }
 
 .text-gradient {
@@ -65,10 +70,10 @@ body {
 
 /* Primary call-to-action with a soft glow. */
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent), #5ee0f0);
-  color: #04120d;
-  font-weight: 600;
-  box-shadow: 0 10px 30px -8px rgba(124, 245, 200, 0.55);
+  background: linear-gradient(135deg, var(--accent), var(--accent-end));
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: 0 8px 24px -12px rgba(29, 155, 240, 0.8);
   transition:
     transform 0.15s ease,
     box-shadow 0.2s ease,
@@ -76,7 +81,7 @@ body {
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 14px 36px -8px rgba(124, 245, 200, 0.7);
+  box-shadow: 0 12px 30px -12px rgba(29, 155, 240, 0.95);
   filter: brightness(1.05);
 }
 .btn-primary:active:not(:disabled) {
@@ -84,9 +89,10 @@ body {
 }
 
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.07);
   border: 1px solid var(--line);
   color: var(--ink);
+  box-shadow: var(--clay);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 .btn-ghost:hover:not(:disabled) {
@@ -270,14 +276,14 @@ body {
   border-radius: 9999px;
   background: white;
   border: 3px solid var(--accent-2);
-  box-shadow: 0 0 18px 4px rgba(139, 123, 255, 0.7);
+  box-shadow: 0 0 18px 4px rgba(29, 155, 240, 0.7);
 }
 .me::before {
   content: "";
   position: absolute;
   inset: -20px;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(139, 123, 255, 0.35), transparent 70%);
+  background: radial-gradient(circle, rgba(29, 155, 240, 0.35), transparent 70%);
   animation: breathe 3s ease-in-out infinite;
 }
 .me-label {
@@ -292,8 +298,8 @@ body {
   padding: 3px 8px;
   border-radius: 9999px;
   color: white;
-  background: rgba(139, 123, 255, 0.9);
-  box-shadow: 0 4px 14px -4px rgba(139, 123, 255, 0.9);
+  background: rgba(29, 155, 240, 0.9);
+  box-shadow: 0 4px 14px -4px rgba(29, 155, 240, 0.9);
 }
 
 /* Mapbox chrome: keep attribution legible but quiet. */

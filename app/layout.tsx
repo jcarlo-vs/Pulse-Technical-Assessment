@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
+const geistSans = Inter({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05060d",
+  themeColor: "#0b0b0c",
   viewportFit: "cover", // lets safe-area insets work on notched phones
 };
 

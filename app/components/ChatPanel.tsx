@@ -242,7 +242,7 @@ export default function ChatPanel({
                 <span
                   className={`max-w-[80%] whitespace-pre-wrap break-words px-4 py-2.5 text-[15px] leading-snug ${
                     m.mine
-                      ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[#5ee0f0] text-[#04120d]"
+                      ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[var(--accent-end)] text-[var(--accent-ink)]"
                       : "rounded-[20px] rounded-bl-md bg-white/[0.08] text-ink"
                   }`}
                 >
@@ -402,7 +402,7 @@ function VoiceNote({ src, seconds, mine }: { src: string; seconds: number; mine:
       aria-label={`${mine ? "Your" : "Stranger's"} voice note, ${seconds} seconds, ${playing ? "pause" : "play"}`}
       className={`flex w-56 max-w-[80%] items-center gap-3 px-4 py-2.5 text-sm ${
         mine
-          ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[#5ee0f0] text-[#04120d]"
+          ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[var(--accent-end)] text-[var(--accent-ink)]"
           : "rounded-[20px] rounded-bl-md bg-white/[0.08] text-ink"
       }`}
     >

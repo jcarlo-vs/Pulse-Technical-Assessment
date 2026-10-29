@@ -81,10 +81,10 @@ export default function EntryGate({
     // Desktop: globe and panel stay together as one centered pair (max
     // 1320px), so wide screens don't strand the panel at the far edge. The
     // map pads its right side by the same panel width (WorldMap).
-    <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,rgba(5,6,13,0.97)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
+    <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,rgba(11,11,12,0.97)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
       {counts && <Activity counts={counts} />}
       <div className="w-full md:flex md:max-w-[1320px] md:justify-end">
-      <div className="anim-rise pointer-events-auto max-h-[100dvh] w-full overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:w-[min(600px,48vw)] md:flex-col md:justify-center md:rounded-[32px] md:border md:border-line md:bg-[rgba(8,10,20,0.78)] md:px-12 md:py-10 md:backdrop-blur-xl">
+      <div className="anim-rise pointer-events-auto max-h-[100dvh] w-full overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:w-[min(600px,48vw)] md:flex-col md:justify-center md:rounded-[32px] md:border md:border-line md:bg-[rgba(24,24,27,0.9)] md:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)] md:px-12 md:py-10 md:backdrop-blur-xl">
         <Wordmark />
         <h2 className="mt-4 text-balance text-[28px] font-semibold leading-[1.1] tracking-tight md:mt-6 md:text-[44px]">
           Talk to someone, somewhere, right now.
@@ -137,10 +137,10 @@ export default function EntryGate({
         <button
           onClick={enter}
           disabled={status === "locating"}
-          className="mt-7 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full px-8 text-base font-semibold text-[#04120d] transition hover:brightness-110 disabled:opacity-70 md:w-auto md:self-start"
+          className="mt-7 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full px-8 text-base font-semibold text-[var(--accent-ink)] transition hover:brightness-110 disabled:opacity-70 md:w-auto md:self-start"
           style={{
-            background: `linear-gradient(135deg, ${current.color}, #5ee0f0)`,
-            boxShadow: `0 10px 40px -12px ${current.color}`,
+            background: "linear-gradient(135deg, var(--accent), var(--accent-end))",
+            boxShadow: "0 10px 32px -12px var(--accent)",
           }}
         >
           {status === "locating" ? (
@@ -280,7 +280,7 @@ function Step({
     <li className="flex gap-4">
       <span
         className={`grid size-8 shrink-0 place-items-center rounded-full text-sm font-semibold ${
-          active ? "bg-accent text-[#04120d]" : "bg-accent/10 text-accent"
+          active ? "bg-accent text-[var(--accent-ink)]" : "bg-accent/10 text-accent"
         }`}
         aria-hidden="true"
       >
@@ -300,7 +300,7 @@ function Wordmark() {
     <h1 className="flex items-center gap-2.5">
       <svg
         viewBox="0 0 64 32"
-        className="h-7 w-14 text-accent drop-shadow-[0_0_12px_rgba(124,245,200,0.7)]"
+        className="h-7 w-14 text-accent drop-shadow-[0_0_12px_rgba(29,155,240,0.6)]"
         aria-hidden="true"
       >
         <path

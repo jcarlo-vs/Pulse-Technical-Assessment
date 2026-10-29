@@ -34,7 +34,7 @@ export default function ConnectionPrompt({
           style={{ ["--accent" as string]: color }}
         >
           <span
-            className="grid size-14 place-items-center rounded-full text-[#04120d]"
+            className="grid size-14 place-items-center rounded-full text-[var(--accent-ink)]"
             style={{
               background: color,
               boxShadow: `0 0 30px 4px color-mix(in srgb, ${color} 55%, transparent)`,
