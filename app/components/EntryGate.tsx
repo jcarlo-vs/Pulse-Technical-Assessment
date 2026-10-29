@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GhostIcon, PinIcon, ShieldIcon } from "./icons";
 import { DEFAULT_VIBE, VIBES, type VibeId } from "@/lib/vibes";
 
@@ -14,6 +14,18 @@ export default function EntryGate({
   const [vibe, setVibe] = useState<VibeId>(DEFAULT_VIBE);
   const [status, setStatus] = useState<"idle" | "locating" | "error">("idle");
   const [error, setError] = useState<string>("");
+  // geolocation waits indefinitely on an unanswered permission prompt (the
+  // timeout only starts after it's granted), and some browsers show that
+  // prompt as a tiny address-bar icon. Explain instead of spinning silently.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (status !== "locating") return;
+    const t = setTimeout(() => setSlow(true), 6000);
+    return () => {
+      clearTimeout(t);
+      setSlow(false);
+    };
+  }, [status]);
 
   function fail(message: string) {
     setStatus("error");
@@ -97,6 +109,16 @@ export default function EntryGate({
             "Drop onto the globe"
           )}
         </button>
+
+        {status === "locating" && slow && (
+          <p
+            role="status"
+            className="anim-fade mx-auto mt-4 max-w-sm rounded-xl border border-line bg-white/[0.04] px-4 py-2.5 text-sm text-ink-dim"
+          >
+            Still waiting for location access. Look for a 📍 prompt near your
+            browser&rsquo;s address bar and choose <b>Allow</b>.
+          </p>
+        )}
 
         {status === "error" && (
           <p
