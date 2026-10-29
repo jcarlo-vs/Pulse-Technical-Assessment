@@ -5,29 +5,22 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
 import type { PeerDot } from "@/lib/types";
 import { LocateIcon } from "./icons";
+import { vibeOf } from "@/lib/vibes";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
-// Stable per-session color: bright, saturated hues that read well on the
-// dark globe.
-export function peerColor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  }
-  return `hsl(${Math.abs(hash) % 360}, 85%, 66%)`;
-}
 
 const SPIN_DEG_PER_SEC = 3;
 
 export default function WorldMap({
   peers,
   me,
+  myVibe,
   onPeerClick,
   canConnect,
 }: {
   peers: PeerDot[];
   me: { lat: number; lng: number } | null;
+  myVibe: string;
   onPeerClick: (id: string) => void;
   canConnect: boolean;
 }) {
@@ -139,7 +132,7 @@ export default function WorldMap({
         const el = document.createElement("div");
         el.className = "me";
         el.title = "You. Others see your dot here, 1–3 km from your real location.";
-        el.innerHTML = `<span class="me-label">You</span><span class="me-core"></span>`;
+        el.innerHTML = `<span class="me-label">You ${vibeOf(myVibe).emoji}</span><span class="me-core"></span>`;
         meMarkerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([me.lng, me.lat])
           .addTo(map);
@@ -151,6 +144,8 @@ export default function WorldMap({
     return () => {
       cancelled = true;
     };
+    // myVibe is fixed for the session once `me` is set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, ready]);
 
   // Reconcile markers whenever the peer list changes (or the map becomes ready).
@@ -170,11 +165,13 @@ export default function WorldMap({
         let marker = markers.get(peer.id);
         if (!marker) {
           const el = document.createElement("button");
+          const vibe = vibeOf(peer.vibe);
           el.className = "dot is-new";
-          el.style.setProperty("--c", peerColor(peer.id));
+          el.style.setProperty("--c", vibe.color);
           // Desync the ring animations so the map breathes, not blinks.
           el.style.setProperty("--d", `${(Math.random() * 2.6).toFixed(2)}s`);
-          el.innerHTML = `<span class="dot-core"></span>`;
+          el.innerHTML = `<span class="dot-core">${vibe.emoji}</span>`;
+          el.dataset.vibe = vibe.label;
           el.addEventListener("click", (e) => {
             e.stopPropagation();
             if (el.classList.contains("is-busy")) return;
@@ -188,8 +185,8 @@ export default function WorldMap({
         const el = marker.getElement();
         el.classList.toggle("is-busy", peer.busy);
         const label = peer.busy
-          ? "Stranger (in a conversation)"
-          : "Stranger, tap to connect";
+          ? `Stranger feeling ${el.dataset.vibe} (in a conversation)`
+          : `Stranger feeling ${el.dataset.vibe}, tap to connect`;
         el.title = label;
         el.setAttribute("aria-label", label);
       }

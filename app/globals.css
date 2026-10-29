@@ -119,8 +119,8 @@ body {
   --c: #7cf5c8;
   position: relative;
   z-index: 2; /* people above your own beacon */
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -129,12 +129,16 @@ body {
   cursor: pointer;
 }
 .dot-core {
-  width: 12px;
-  height: 12px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  line-height: 1;
   border-radius: 9999px;
-  background: var(--c);
+  background: color-mix(in srgb, var(--c) 30%, #0b0d1a);
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 0 2px var(--c),
     0 0 14px 2px var(--c),
     0 0 32px 6px color-mix(in srgb, var(--c) 45%, transparent);
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -143,7 +147,7 @@ body {
 .dot::after {
   content: "";
   position: absolute;
-  inset: 9px;
+  inset: 8px;
   border-radius: 9999px;
   border: 1.5px solid var(--c);
   opacity: 0;
@@ -155,13 +159,15 @@ body {
 }
 .dot:hover .dot-core,
 .dot:focus-visible .dot-core {
-  transform: scale(1.45);
+  transform: scale(1.25);
 }
 .dot.is-busy {
   cursor: not-allowed;
 }
 .dot.is-busy .dot-core {
-  background: #4a4e6a;
+  filter: grayscale(1);
+  opacity: 0.55;
+  background: #2a2d42;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 .dot.is-busy::before,
@@ -234,7 +240,7 @@ body {
     opacity: 0.9;
   }
   100% {
-    transform: scale(3.2);
+    transform: scale(2.4);
     opacity: 0;
   }
 }

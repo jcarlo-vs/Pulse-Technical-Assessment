@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import EntryGate from "./components/EntryGate";
-import WorldMap, { peerColor } from "./components/WorldMap";
-import { VideoIcon } from "./components/icons";
+import WorldMap from "./components/WorldMap";
+import VibeFilter from "./components/VibeFilter";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
@@ -11,6 +11,7 @@ import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { type PeerDot, type SignalMsg } from "@/lib/types";
+import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
 type Conn =
   | { kind: "idle" }
@@ -20,6 +21,10 @@ type Conn =
   | { kind: "connected"; peerId: string };
 
 type VideoState = "none" | "requesting" | "incoming" | "active";
+// Consent-blur: each side's camera stays blurred (at the source) until both
+// people have tapped "Reveal". Either can blur again at any time.
+type Reveal = { mine: boolean; theirs: boolean };
+const HIDDEN: Reveal = { mine: false, theirs: false };
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -50,11 +55,25 @@ export default function Home() {
   const setVideo = (v: VideoState) => {
     videoRef.current = v;
     _setVideo(v);
+    if (v !== "active") setReveal(HIDDEN); // every call starts blurred
   };
+
+  const [reveal, _setReveal] = useState<Reveal>(HIDDEN);
+  const revealRef = useRef<Reveal>(reveal);
+  const setReveal = (r: Reveal) => {
+    revealRef.current = r;
+    _setReveal(r);
+    peerRef.current?.setVideoClear(r.mine && r.theirs);
+  };
+
+  const [myVibe, setMyVibe] = useState<VibeId>(DEFAULT_VIBE);
+  const [filter, setFilter] = useState<VibeId | null>(null);
+  const [promptTurn, setPromptTurn] = useState(0);
 
   // Our *offset* position, re-sent as-is if we get reaped and must re-join.
   // (The raw location is never kept after the first join.)
   const myLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const myVibeRef = useRef<VibeId>(DEFAULT_VIBE);
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,6 +148,12 @@ export default function Home() {
           setVideo("none");
           showNotice("Video declined.");
         }
+        break;
+      case "video-reveal":
+        setReveal({ ...revealRef.current, theirs: true });
+        break;
+      case "video-blur":
+        setReveal({ ...revealRef.current, theirs: false });
         break;
       case "video-end":
         ps?.stopVideo();
@@ -224,6 +249,12 @@ export default function Home() {
     setVideo("none");
   }
 
+  function toggleReveal() {
+    const mine = !revealRef.current.mine;
+    peerRef.current?.sendControl(mine ? "video-reveal" : "video-blur");
+    setReveal({ ...revealRef.current, mine });
+  }
+
   function processSignal(sig: SignalMsg) {
     switch (sig.type) {
       case "request": {
@@ -298,7 +329,7 @@ export default function Home() {
         if (!data) {
           if (myLocationRef.current) {
             const { lat, lng } = myLocationRef.current;
-            await join(secret, lat, lng, true);
+            await join(secret, lat, lng, myVibeRef.current, true);
           }
         } else {
           setPeers(data.peers);
@@ -326,9 +357,11 @@ export default function Home() {
     };
   }, [secret, phase]);
 
-  async function handleReady(lat: number, lng: number) {
+  async function handleReady(lat: number, lng: number, vibe: VibeId) {
+    myVibeRef.current = vibe;
+    setMyVibe(vibe);
     // Show the user the offset position others see, not their exact spot.
-    const placed = await join(secret, lat, lng);
+    const placed = await join(secret, lat, lng, vibe);
     myLocationRef.current = placed;
     setMyLocation(placed);
     setPhase("live");
@@ -337,14 +370,17 @@ export default function Home() {
   const live = phase === "live";
   const inChat = conn.kind === "connecting" || conn.kind === "connected";
   const peerId = conn.kind === "idle" ? null : conn.peerId;
-  const color = peerId ? peerColor(peerId) : "var(--accent)";
-  const available = peers.filter((p) => !p.busy).length;
+  const peerVibe = vibeOf(peers.find((p) => p.id === peerId)?.vibe);
+  const color = peerVibe.color;
+  const shown = filter ? peers.filter((p) => p.vibe === filter) : peers;
+  const available = shown.filter((p) => !p.busy).length;
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-bg">
       <WorldMap
-        peers={peers}
+        peers={shown}
         me={myLocation}
+        myVibe={myVibe}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
       />
@@ -374,10 +410,16 @@ export default function Home() {
         </header>
       )}
 
+      {live && !inChat && (
+        <VibeFilter peers={peers} value={filter} onChange={setFilter} />
+      )}
+
       {live && conn.kind === "idle" && (
         <p className="glass anim-rise pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-sm text-ink-dim">
-          {peers.length === 0
-            ? "It's quiet right now. Your dot is live, so someone may find you."
+          {shown.length === 0
+            ? filter
+              ? `Nobody's feeling ${vibeOf(filter).emoji} right now. Try another vibe.`
+              : "It's quiet right now. Your dot is live, so someone may find you."
             : available === 0
               ? "Everyone's mid-conversation. Hang tight."
               : "Tap a glowing dot to say hello"}
@@ -432,10 +474,11 @@ export default function Home() {
       {conn.kind === "incoming" && (
         <ConnectionPrompt
           title="Someone wants to talk"
-          subtitle="A stranger nearby tapped your dot. Nothing is shared until you accept."
+          subtitle={`A stranger feeling ${peerVibe.emoji} ${peerVibe.label.toLowerCase()} tapped your dot. Nothing is shared until you accept.`}
           acceptLabel="Accept"
           declineLabel="Not now"
           color={color}
+          icon={<span className="text-2xl">{peerVibe.emoji}</span>}
           onAccept={acceptIncoming}
           onDecline={declineIncoming}
         />
@@ -447,6 +490,9 @@ export default function Home() {
           connected={conn.kind === "connected"}
           videoBusy={video !== "none"}
           color={color}
+          vibe={peerVibe}
+          icebreaker={peerId ? icebreaker(peerVibe.id, peerId, promptTurn) : ""}
+          onShuffle={() => setPromptTurn((t) => t + 1)}
           onSend={(text) => {
             peerRef.current?.sendChat(text);
             addMessage(true, text);
@@ -466,11 +512,11 @@ export default function Home() {
       {video === "incoming" && (
         <ConnectionPrompt
           title="Start a video call?"
-          subtitle="Your camera and mic turn on only if you accept."
+          subtitle="Video starts blurred for both of you. It only turns clear once you've both tapped Reveal."
           acceptLabel="Turn on camera"
           declineLabel="Stay in chat"
           color={color}
-          icon={<VideoIcon width={24} height={24} />}
+          icon={<span className="text-2xl">🛡️</span>}
           onAccept={acceptVideo}
           onDecline={declineVideo}
         />
@@ -480,6 +526,8 @@ export default function Home() {
         <VideoPanel
           localStream={localStream}
           remoteStream={remoteStream}
+          reveal={reveal}
+          onToggleReveal={toggleReveal}
           onEnd={endVideo}
         />
       )}

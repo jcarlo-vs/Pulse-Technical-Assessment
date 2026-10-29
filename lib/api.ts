@@ -23,9 +23,10 @@ export async function join(
   secret: string,
   lat: number,
   lng: number,
+  vibe: string,
   rejoin = false,
 ): Promise<{ lat: number; lng: number }> {
-  const res = await post("/api/join", { secret, lat, lng, rejoin });
+  const res = await post("/api/join", { secret, lat, lng, vibe, rejoin });
   if (!res.ok) throw new Error(`join failed: ${res.status}`);
   const data = await res.json();
   return { lat: data.lat, lng: data.lng };

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PhoneOffIcon, SendIcon, VideoIcon } from "./icons";
 import { MAX_CHAT_LEN } from "@/lib/webrtc";
+import type { Vibe } from "@/lib/vibes";
 
 export interface ChatMessage {
   id: number;
@@ -17,6 +18,9 @@ export default function ChatPanel({
   connected,
   videoBusy,
   color,
+  vibe,
+  icebreaker,
+  onShuffle,
   onSend,
   onStartVideo,
   onEnd,
@@ -25,6 +29,9 @@ export default function ChatPanel({
   connected: boolean;
   videoBusy: boolean;
   color: string;
+  vibe: Vibe;
+  icebreaker: string;
+  onShuffle: () => void;
   onSend: (text: string) => void;
   onStartVideo: () => void;
   onEnd: () => void;
@@ -66,7 +73,15 @@ export default function ChatPanel({
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold leading-tight">Stranger</p>
+          <p className="flex items-center gap-2 font-semibold leading-tight">
+            Stranger
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{ background: `color-mix(in srgb, ${color} 18%, transparent)`, color }}
+            >
+              {vibe.emoji} {vibe.label}
+            </span>
+          </p>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-dim">
             <span
               className={`size-1.5 rounded-full ${connected ? "bg-accent shadow-[0_0_8px_var(--accent)]" : "animate-pulse bg-amber-300"}`}
@@ -98,7 +113,7 @@ export default function ChatPanel({
         aria-live="polite"
       >
         {messages.length === 0 && (
-          <div className="anim-fade mx-auto mt-6 max-w-[260px] text-center">
+          <div className="anim-fade mx-auto mt-6 max-w-[290px] text-center">
             <p className="text-sm font-medium">
               {connected ? "You're connected 👋" : "Opening a private line…"}
             </p>
@@ -106,6 +121,33 @@ export default function ChatPanel({
               Messages travel directly between you two and vanish when either of
               you leaves.
             </p>
+            {connected && icebreaker && (
+              <div className="mt-6 text-left">
+                <p className="mb-2 text-center text-[11px] font-medium uppercase tracking-[0.14em] text-ink-faint">
+                  Not sure what to say?
+                </p>
+                <button
+                  onClick={() => {
+                    setDraft(icebreaker);
+                    inputRef.current?.focus();
+                  }}
+                  className="w-full rounded-2xl border px-4 py-3 text-left text-sm leading-snug transition hover:bg-white/[0.06]"
+                  style={{ borderColor: `color-mix(in srgb, ${color} 45%, transparent)` }}
+                >
+                  <span className="mr-1.5">{vibe.emoji}</span>
+                  {icebreaker}
+                  <span className="mt-1 block text-[11px] text-ink-faint">
+                    Tap to use it
+                  </span>
+                </button>
+                <button
+                  onClick={onShuffle}
+                  className="mx-auto mt-2 block text-xs text-ink-faint underline-offset-4 hover:text-ink-dim hover:underline"
+                >
+                  Another one
+                </button>
+              </div>
+            )}
           </div>
         )}
         {messages.map((m, i) => {

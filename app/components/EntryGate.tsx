@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import { GhostIcon, PinIcon, ShieldIcon } from "./icons";
+import { DEFAULT_VIBE, VIBES, type VibeId } from "@/lib/vibes";
 
 // Landing overlay. Sits on top of the live, slowly spinning globe so the
 // first thing people see is the product, not a form.
 export default function EntryGate({
   onReady,
 }: {
-  onReady: (lat: number, lng: number) => Promise<void>;
+  onReady: (lat: number, lng: number, vibe: VibeId) => Promise<void>;
 }) {
+  const [vibe, setVibe] = useState<VibeId>(DEFAULT_VIBE);
   const [status, setStatus] = useState<"idle" | "locating" | "error">("idle");
   const [error, setError] = useState<string>("");
 
@@ -26,7 +28,7 @@ export default function EntryGate({
     setStatus("locating");
     navigator.geolocation.getCurrentPosition(
       (pos) =>
-        onReady(pos.coords.latitude, pos.coords.longitude).catch(() =>
+        onReady(pos.coords.latitude, pos.coords.longitude, vibe).catch(() =>
           fail("Couldn't reach Pulse. Check your connection and try again."),
         ),
       (err) =>
@@ -49,10 +51,42 @@ export default function EntryGate({
           Every glowing dot is a real person, right now. Tap one and say hello.
         </p>
 
+        <fieldset className="mt-7">
+          <legend className="mb-2.5 w-full text-xs font-medium uppercase tracking-[0.14em] text-ink-faint">
+            What&rsquo;s your vibe?
+          </legend>
+          <div className="grid grid-cols-3 gap-2 [text-shadow:none]">
+            {VIBES.map((v) => {
+              const active = v.id === vibe;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVibe(v.id)}
+                  aria-pressed={active}
+                  className="glass flex items-center justify-center gap-1.5 rounded-2xl px-2 py-2.5 text-[13px] transition hover:bg-white/10"
+                  style={
+                    active
+                      ? {
+                          borderColor: v.color,
+                          boxShadow: `0 0 0 1px ${v.color}, 0 0 22px -6px ${v.color}`,
+                          color: "white",
+                        }
+                      : { color: "var(--ink-dim)" }
+                  }
+                >
+                  <span aria-hidden="true">{v.emoji}</span>
+                  {v.label}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
         <button
           onClick={enter}
           disabled={status === "locating"}
-          className="btn-primary mt-8 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full text-base disabled:opacity-70 sm:w-auto sm:px-12"
+          className="btn-primary mt-6 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full text-base disabled:opacity-70 sm:w-auto sm:px-12"
         >
           {status === "locating" ? (
             <>
