@@ -21,10 +21,12 @@ type Conn =
   | { kind: "connected"; peerId: string };
 
 type VideoState = "none" | "requesting" | "incoming" | "active";
-// Consent-blur: each side's camera stays blurred (at the source) until both
-// people have tapped "Reveal". Either can blur again at any time.
-type Reveal = { mine: boolean; theirs: boolean };
-const HIDDEN: Reveal = { mine: false, theirs: false };
+// Consent-blur: every call starts fully blurred, then each person decides
+// independently: whether to show themselves (blurred at the source, so it's
+// enforced on their own device) and whether to see the other person clearly
+// (a local-only blur on their own screen). Nobody can unblur someone else.
+type Privacy = { showMe: boolean; theyShow: boolean; seeThem: boolean };
+const HIDDEN: Privacy = { showMe: false, theyShow: false, seeThem: false };
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -55,15 +57,15 @@ export default function Home() {
   const setVideo = (v: VideoState) => {
     videoRef.current = v;
     _setVideo(v);
-    if (v !== "active") setReveal(HIDDEN); // every call starts blurred
+    if (v !== "active") setPrivacy(HIDDEN); // every call starts blurred
   };
 
-  const [reveal, _setReveal] = useState<Reveal>(HIDDEN);
-  const revealRef = useRef<Reveal>(reveal);
-  const setReveal = (r: Reveal) => {
-    revealRef.current = r;
-    _setReveal(r);
-    peerRef.current?.setVideoClear(r.mine && r.theirs);
+  const [privacy, _setPrivacy] = useState<Privacy>(HIDDEN);
+  const privacyRef = useRef<Privacy>(privacy);
+  const setPrivacy = (p: Privacy) => {
+    privacyRef.current = p;
+    _setPrivacy(p);
+    peerRef.current?.setVideoClear(p.showMe);
   };
 
   const [myVibe, setMyVibe] = useState<VibeId>(DEFAULT_VIBE);
@@ -149,11 +151,12 @@ export default function Home() {
           showNotice("Video declined.");
         }
         break;
+      // The peer only reports their own choice; it never unblurs anything here.
       case "video-reveal":
-        setReveal({ ...revealRef.current, theirs: true });
+        setPrivacy({ ...privacyRef.current, theyShow: true });
         break;
       case "video-blur":
-        setReveal({ ...revealRef.current, theirs: false });
+        setPrivacy({ ...privacyRef.current, theyShow: false });
         break;
       case "video-end":
         ps?.stopVideo();
@@ -249,10 +252,14 @@ export default function Home() {
     setVideo("none");
   }
 
-  function toggleReveal() {
-    const mine = !revealRef.current.mine;
-    peerRef.current?.sendControl(mine ? "video-reveal" : "video-blur");
-    setReveal({ ...revealRef.current, mine });
+  function toggleShowMe() {
+    const showMe = !privacyRef.current.showMe;
+    peerRef.current?.sendControl(showMe ? "video-reveal" : "video-blur");
+    setPrivacy({ ...privacyRef.current, showMe });
+  }
+
+  function toggleSeeThem() {
+    setPrivacy({ ...privacyRef.current, seeThem: !privacyRef.current.seeThem });
   }
 
   function processSignal(sig: SignalMsg) {
@@ -512,7 +519,7 @@ export default function Home() {
       {video === "incoming" && (
         <ConnectionPrompt
           title="Start a video call?"
-          subtitle="Video starts blurred for both of you. It only turns clear once you've both tapped Reveal."
+          subtitle="Video starts blurred for both of you. Each of you decides when to show yourself, and whether to see the other clearly."
           acceptLabel="Turn on camera"
           declineLabel="Stay in chat"
           color={color}
@@ -526,8 +533,9 @@ export default function Home() {
         <VideoPanel
           localStream={localStream}
           remoteStream={remoteStream}
-          reveal={reveal}
-          onToggleReveal={toggleReveal}
+          privacy={privacy}
+          onToggleShowMe={toggleShowMe}
+          onToggleSeeThem={toggleSeeThem}
           onEnd={endVideo}
         />
       )}

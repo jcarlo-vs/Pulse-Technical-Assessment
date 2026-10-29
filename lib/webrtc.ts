@@ -41,7 +41,7 @@ export class PeerSession {
   private makingOffer = false;
   private ignoreOffer = false;
   private camera: BlurredCamera | null = null;
-  // Outgoing video stays blurred until both sides have revealed.
+  // Outgoing video stays blurred until this user chooses to show themselves.
   private clear = false;
   private closed = false;
   private readonly cb: PeerCallbacks;
@@ -168,7 +168,7 @@ export class PeerSession {
     }
   }
 
-  // Returns the stream actually being sent (blurred until both reveal).
+  // Returns the stream actually being sent (blurred until we choose to show).
   async startVideo(): Promise<MediaStream> {
     if (!this.camera) {
       const raw = await navigator.mediaDevices.getUserMedia({

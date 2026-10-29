@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  EyeIcon,
+  EyeOffIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
@@ -13,17 +15,21 @@ import {
 export default function VideoPanel({
   localStream,
   remoteStream,
-  reveal,
-  onToggleReveal,
+  privacy,
+  onToggleShowMe,
+  onToggleSeeThem,
   onEnd,
 }: {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
-  reveal: { mine: boolean; theirs: boolean };
-  onToggleReveal: () => void;
+  privacy: { showMe: boolean; theyShow: boolean; seeThem: boolean };
+  onToggleShowMe: () => void;
+  onToggleSeeThem: () => void;
   onEnd: () => void;
 }) {
-  const clear = reveal.mine && reveal.theirs;
+  const { showMe, theyShow, seeThem } = privacy;
+  // Intro card until the user makes their first privacy choice.
+  const untouched = !showMe && !seeThem;
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const [micOn, setMicOn] = useState(true);
@@ -61,14 +67,13 @@ export default function VideoPanel({
   return (
     <div className="anim-fade absolute inset-0 z-40 bg-black">
       {/* Remote (full screen) */}
-      {/* Their camera is already blurred at their end until you've both
-          revealed; we blur it here too, so a modified client can't flash
-          you either. */}
+      {/* Blurred on *your* screen until you choose to see them, regardless of
+          what they send: a modified client can't flash you. */}
       <video
         ref={remoteRef}
         autoPlay
         playsInline
-        className={`h-full w-full object-cover transition-[filter] duration-700 ${clear ? "" : "scale-110 blur-2xl"}`}
+        className={`h-full w-full object-cover transition-[filter] duration-700 ${seeThem ? "" : "scale-110 blur-2xl"}`}
       />
       {!remoteStream && (
         <div className="absolute inset-0 grid place-items-center">
@@ -81,32 +86,43 @@ export default function VideoPanel({
         </div>
       )}
 
-      {remoteStream && !clear && (
+      {remoteStream && (
+        <p className="glass anim-fade absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex max-w-[calc(100%-11rem)] items-center gap-2 rounded-full px-4 py-2 text-xs">
+          <span
+            className={`size-1.5 rounded-full ${theyShow ? "bg-accent" : "bg-amber-300"}`}
+          />
+          {theyShow
+            ? "Stranger is showing their camera"
+            : "Stranger is keeping their camera blurred"}
+        </p>
+      )}
+
+      {remoteStream && untouched && (
         <div className="absolute inset-0 grid place-items-center p-6">
           <div className="glass-strong anim-rise w-full max-w-sm rounded-[28px] p-6 text-center">
             <span className="text-3xl" aria-hidden="true">🛡️</span>
             <h2 className="mt-3 text-lg font-semibold tracking-tight">
-              {reveal.mine
-                ? "Waiting for them to reveal…"
-                : reveal.theirs
-                  ? "They're ready to be seen"
-                  : "You're both blurred"}
+              Both cameras start blurred
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-ink-dim">
-              {reveal.mine
-                ? "Your camera turns clear only once they reveal too. You can change your mind."
-                : "You can hear each other. Cameras turn clear only when you both tap Reveal."}
+              You can already hear each other. You decide when to show
+              yourself, and whether to see them clearly. Change either one
+              any time.
             </p>
-            <div className="mt-4 flex justify-center gap-2 text-xs">
-              <Consent who="You" ok={reveal.mine} />
-              <Consent who="Stranger" ok={reveal.theirs} />
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={onToggleSeeThem}
+                className="btn-ghost h-12 flex-1 rounded-full text-sm font-medium"
+              >
+                Unblur them
+              </button>
+              <button
+                onClick={onToggleShowMe}
+                className="btn-primary h-12 flex-1 rounded-full text-sm"
+              >
+                Show me
+              </button>
             </div>
-            <button
-              onClick={onToggleReveal}
-              className={`mt-5 h-12 w-full rounded-full text-sm font-semibold ${reveal.mine ? "btn-ghost" : "btn-primary"}`}
-            >
-              {reveal.mine ? "Stay blurred" : "Reveal my camera"}
-            </button>
           </div>
         </div>
       )}
@@ -129,7 +145,7 @@ export default function VideoPanel({
           </div>
         )}
         <span className="absolute inset-x-0 bottom-0 bg-black/55 py-1 text-center text-[10px] font-medium text-white/85">
-          {clear ? "They see you" : "They see this blur"}
+          {showMe ? "They can see you" : "They see this blur"}
         </span>
       </div>
 
@@ -148,15 +164,22 @@ export default function VideoPanel({
         >
           {camOn ? <VideoIcon /> : <VideoOffIcon />}
         </ControlButton>
-        {clear && (
-          <ControlButton
-            on
-            onClick={onToggleReveal}
-            label="Blur my camera again"
-          >
-            <ShieldIcon />
-          </ControlButton>
-        )}
+        <LabeledToggle
+          active={showMe}
+          onClick={onToggleShowMe}
+          label={showMe ? "Hide me" : "Show me"}
+          hint={showMe ? "Blur my camera" : "Let them see me clearly"}
+        >
+          <ShieldIcon />
+        </LabeledToggle>
+        <LabeledToggle
+          active={seeThem}
+          onClick={onToggleSeeThem}
+          label={seeThem ? "Blur them" : "Unblur them"}
+          hint={seeThem ? "Blur their video on my screen" : "See them clearly"}
+        >
+          {seeThem ? <EyeIcon /> : <EyeOffIcon />}
+        </LabeledToggle>
         <button
           onClick={onEnd}
           aria-label="End video and return to chat"
@@ -197,12 +220,33 @@ function ControlButton({
   );
 }
 
-function Consent({ who, ok }: { who: string; ok: boolean }) {
+// Text-labelled on wider screens: these two are new concepts, so an icon
+// alone isn't enough.
+function LabeledToggle({
+  active,
+  onClick,
+  label,
+  hint,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
   return (
-    <span
-      className={`rounded-full border px-3 py-1 ${ok ? "border-accent/50 text-accent" : "border-line text-ink-faint"}`}
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={hint}
+      title={hint}
+      className={`flex h-12 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition sm:px-4 ${
+        active ? "btn-ghost text-accent" : "btn-ghost"
+      }`}
     >
-      {ok ? "✓" : "…"} {who}
-    </span>
+      {children}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   );
 }
