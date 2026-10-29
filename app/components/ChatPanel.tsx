@@ -2,14 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PhoneOffIcon, SendIcon, VideoIcon } from "./icons";
+import { MAX_CHAT_LEN } from "@/lib/webrtc";
 
 export interface ChatMessage {
   id: number;
   mine: boolean;
   text: string;
 }
-
-const MAX_LEN = 1000;
 
 // Bottom sheet on phones, floating side panel on desktop so the globe stays
 // visible behind the conversation.
@@ -139,7 +138,7 @@ export default function ChatPanel({
           ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          maxLength={MAX_LEN}
+          maxLength={MAX_CHAT_LEN}
           placeholder={connected ? "Say something nice…" : "Connecting…"}
           disabled={!connected}
           aria-label="Message"

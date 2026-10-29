@@ -14,6 +14,16 @@ interface PeerCallbacks {
   onChannelOpen: () => void;
 }
 
+const CONTROLS: readonly string[] = [
+  "video-request",
+  "video-accept",
+  "video-decline",
+  "video-end",
+];
+
+// The peer is an untrusted stranger: cap what they can push at us.
+export const MAX_CHAT_LEN = 1000;
+
 const ICE_CONFIG: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
@@ -74,11 +84,13 @@ export class PeerSession {
   private wireDataChannel(dc: RTCDataChannel) {
     dc.onopen = () => this.cb.onChannelOpen();
     dc.onmessage = (e) => {
+      if (typeof e.data !== "string" || e.data.length > MAX_CHAT_LEN * 8) return;
       try {
-        const msg = JSON.parse(e.data as string);
+        const msg = JSON.parse(e.data);
         if (msg.t === "chat" && typeof msg.text === "string") {
-          this.cb.onChat(msg.text);
-        } else if (msg.t === "ctrl" && typeof msg.ctrl === "string") {
+          const text = msg.text.trim().slice(0, MAX_CHAT_LEN);
+          if (text) this.cb.onChat(text);
+        } else if (msg.t === "ctrl" && CONTROLS.includes(msg.ctrl)) {
           this.cb.onControl(msg.ctrl as PeerControl);
         }
       } catch {}
@@ -87,7 +99,12 @@ export class PeerSession {
 
   async handleSignal(type: DescType, payload: string) {
     if (this.closed) return;
-    const data = JSON.parse(payload);
+    let data;
+    try {
+      data = JSON.parse(payload);
+    } catch {
+      return; // malformed signaling payload
+    }
 
     if (type === "ice") {
       if (!this.pc.remoteDescription) {
