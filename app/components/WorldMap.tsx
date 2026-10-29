@@ -17,12 +17,15 @@ export default function WorldMap({
   myVibe,
   onPeerClick,
   canConnect,
+  focus,
 }: {
   peers: PeerDot[];
   me: { lat: number; lng: number } | null;
   myVibe: string;
   onPeerClick: (id: string) => void;
   canConnect: boolean;
+  // Fly here when it changes (used by "Find someone").
+  focus?: { lat: number; lng: number } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
@@ -170,7 +173,7 @@ export default function WorldMap({
           el.style.setProperty("--c", vibe.color);
           // Desync the ring animations so the map breathes, not blinks.
           el.style.setProperty("--d", `${(Math.random() * 2.6).toFixed(2)}s`);
-          el.innerHTML = `<span class="dot-core">${vibe.emoji}</span>`;
+          el.innerHTML = `<span class="busy-tag">In a call</span><span class="dot-core">${vibe.emoji}</span>`;
           el.dataset.vibe = vibe.label;
           el.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -204,6 +207,12 @@ export default function WorldMap({
       cancelled = true;
     };
   }, [peers, ready]);
+
+  useEffect(() => {
+    if (!focus || !mapRef.current) return;
+    spinRef.current = false;
+    mapRef.current.flyTo({ center: [focus.lng, focus.lat], zoom: 5, essential: true });
+  }, [focus]);
 
   function recenter() {
     if (mapRef.current && me) {

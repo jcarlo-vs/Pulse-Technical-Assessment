@@ -11,6 +11,7 @@ import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
+import { distanceKm, formatDistance, placeName } from "@/lib/geo";
 import { type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
@@ -71,6 +72,9 @@ export default function Home() {
 
   const [myVibe, setMyVibe] = useState<VibeId>(DEFAULT_VIBE);
   const [filter, setFilter] = useState<VibeId | null>(null);
+  const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
+  // Rough place name of whoever we're calling / talking to.
+  const [place, setPlace] = useState<{ peerId: string; name: string } | null>(null);
   const [promptTurn, setPromptTurn] = useState(0);
 
   // Our *offset* position, re-sent as-is if we get reaped and must re-join.
@@ -223,6 +227,15 @@ export default function Home() {
         teardown("No answer.");
       }
     }, REQUEST_TIMEOUT_MS);
+  }
+
+  // "Find someone": a random free person within the current vibe filter.
+  function findSomeone() {
+    const free = peers.filter((p) => !p.busy && (!filter || p.vibe === filter));
+    const pick = free[Math.floor(Math.random() * free.length)];
+    if (!pick) return;
+    setFocus({ lat: pick.lat, lng: pick.lng });
+    requestConnection(pick.id);
   }
 
   function cancelRequest() {
@@ -412,6 +425,27 @@ export default function Home() {
     setPhase("live");
   }
 
+  const livePeerId = conn.kind === "idle" ? null : conn.peerId;
+  const livePeer = peers.find((p) => p.id === livePeerId);
+  useEffect(() => {
+    if (!livePeer) return;
+    let cancelled = false;
+    void placeName(livePeer).then((name) => {
+      if (!cancelled && name) setPlace({ peerId: livePeer.id, name });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Positions are fixed per session, so the id is the only real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePeer?.id]);
+  const where = [
+    livePeer && myLocation ? formatDistance(distanceKm(myLocation, livePeer)) : null,
+    place?.peerId === livePeerId ? place?.name : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const live = phase === "live";
   const inChat = conn.kind === "connecting" || conn.kind === "connected";
   const peerId = conn.kind === "idle" ? null : conn.peerId;
@@ -428,6 +462,7 @@ export default function Home() {
         myVibe={myVibe}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
+        focus={focus}
       />
 
       {!live && <EntryGate onReady={handleReady} />}
@@ -459,6 +494,16 @@ export default function Home() {
         <VibeFilter peers={peers} value={filter} onChange={setFilter} />
       )}
 
+      {live && conn.kind === "idle" && available > 0 && (
+        <button
+          onClick={findSomeone}
+          className="btn-primary anim-rise absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+3.25rem)] left-1/2 z-10 flex h-11 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
+        >
+          <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
+          {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
+        </button>
+      )}
+
       {live && conn.kind === "idle" && (
         <p className="glass anim-rise pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-sm text-ink-dim">
           {shown.length === 0
@@ -467,7 +512,7 @@ export default function Home() {
               : "It's quiet right now. Your dot is live, so someone may find you."
             : available === 0
               ? "Everyone's mid-conversation. Hang tight."
-              : "Tap a glowing dot to say hello"}
+              : "Or tap any glowing dot to say hello"}
         </p>
       )}
 
@@ -494,9 +539,11 @@ export default function Home() {
               />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="font-semibold">Calling a stranger…</p>
-              <p className="text-xs text-ink-dim">
-                Waiting for them to accept
+              <p className="font-semibold">
+                Calling a stranger {peerVibe.emoji}
+              </p>
+              <p className="line-clamp-2 text-xs text-ink-dim">
+                {where || "Waiting for them to accept"}
               </p>
             </div>
             <button
@@ -519,7 +566,7 @@ export default function Home() {
       {conn.kind === "incoming" && (
         <ConnectionPrompt
           title="Someone wants to talk"
-          subtitle={`A stranger feeling ${peerVibe.emoji} ${peerVibe.label.toLowerCase()} tapped your dot. Nothing is shared until you accept.`}
+          subtitle={`A stranger feeling ${peerVibe.emoji} ${peerVibe.label.toLowerCase()} tapped your dot${where ? `, ${where}` : ""}. Nothing is shared until you accept.`}
           acceptLabel="Accept"
           declineLabel="Not now"
           color={color}
@@ -536,6 +583,7 @@ export default function Home() {
           videoBusy={video !== "none"}
           color={color}
           vibe={peerVibe}
+          where={where}
           icebreaker={peerId ? icebreaker(peerVibe.id, peerId, promptTurn) : ""}
           onShuffle={() => setPromptTurn((t) => t + 1)}
           onSendPhoto={sendPhoto}

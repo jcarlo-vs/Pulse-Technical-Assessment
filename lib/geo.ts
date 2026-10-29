@@ -45,3 +45,51 @@ export function isValidLatLng(lat: unknown, lng: unknown): boolean {
     lng <= 180
   );
 }
+
+// "How far, and roughly where?" for the person you're talking to. Both
+// inputs are the already-public *offset* dot positions, so this reveals
+// nothing the map doesn't already show.
+
+type Point = { lat: number; lng: number };
+
+export function distanceKm(a: Point, b: Point): number {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+// Each dot is offset 1-3 km, so anything finer than ~10 km would be false
+// precision.
+export function formatDistance(km: number): string {
+  if (km < 10) return "less than 10 km away";
+  const step = km < 100 ? 5 : km < 1000 ? 10 : 100;
+  return `about ${(Math.round(km / step) * step).toLocaleString()} km away`;
+}
+
+const cache = new Map<string, string | null>();
+
+// City-level name via Mapbox reverse geocoding: one lookup per call, never
+// per dot. Null over the ocean or if the lookup fails.
+export async function placeName({ lat, lng }: Point): Promise<string | null> {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token) return null;
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  if (cache.has(key)) return cache.get(key)!;
+  let name: string | null = null;
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&types=place,region,country&limit=1&access_token=${token}`,
+    );
+    const props = (await res.json()).features?.[0]?.properties;
+    if (props?.name) {
+      const country = props.context?.country?.name;
+      name = country && country !== props.name ? `${props.name}, ${country}` : props.name;
+    }
+  } catch {}
+  cache.set(key, name);
+  return name;
+}

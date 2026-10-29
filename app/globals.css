@@ -170,6 +170,25 @@ body {
   background: #2a2d42;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
+/* Spelled out, not just greyed: unavailable should never be a guess. */
+.busy-tag {
+  display: none;
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(42, 45, 66, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.dot.is-busy .busy-tag {
+  display: block;
+}
 .dot.is-busy::before,
 .dot.is-busy::after {
   animation: none;

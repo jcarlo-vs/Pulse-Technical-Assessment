@@ -29,6 +29,7 @@ export default function ChatPanel({
   videoBusy,
   color,
   vibe,
+  where,
   icebreaker,
   onShuffle,
   onSendPhoto,
@@ -42,6 +43,7 @@ export default function ChatPanel({
   videoBusy: boolean;
   color: string;
   vibe: Vibe;
+  where: string;
   icebreaker: string;
   onShuffle: () => void;
   onSendPhoto: (file: File) => void;
@@ -144,7 +146,9 @@ export default function ChatPanel({
             <span
               className={`size-1.5 rounded-full ${connected ? "bg-accent shadow-[0_0_8px_var(--accent)]" : "animate-pulse bg-amber-300"}`}
             />
-            {connected ? "Connected · peer-to-peer" : "Connecting…"}
+            <span className="truncate">
+              {connected ? where || "Connected · peer-to-peer" : "Connecting…"}
+            </span>
           </p>
         </div>
         <button
