@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ImageIcon, PhoneOffIcon, SendIcon, VideoIcon } from "./icons";
+import {
+  CloseIcon,
+  ImageIcon,
+  MicIcon,
+  PhoneOffIcon,
+  SendIcon,
+  VideoIcon,
+} from "./icons";
 import { MAX_CHAT_LEN } from "@/lib/webrtc";
+import { MAX_VOICE_SECONDS, startRecording, type Recording } from "@/lib/voice";
 import type { Vibe } from "@/lib/vibes";
 
 export interface ChatMessage {
@@ -10,6 +18,7 @@ export interface ChatMessage {
   mine: boolean;
   text: string;
   photo?: string; // object URL; the photo itself only ever lived in memory
+  voice?: { src: string; seconds: number };
 }
 
 // Bottom sheet on phones, floating side panel on desktop so the globe stays
@@ -23,6 +32,7 @@ export default function ChatPanel({
   icebreaker,
   onShuffle,
   onSendPhoto,
+  onSendVoice,
   onSend,
   onStartVideo,
   onEnd,
@@ -35,6 +45,7 @@ export default function ChatPanel({
   icebreaker: string;
   onShuffle: () => void;
   onSendPhoto: (file: File) => void;
+  onSendVoice: (voice: Blob, seconds: number) => void;
   onSend: (text: string) => void;
   onStartVideo: () => void;
   onEnd: () => void;
@@ -42,6 +53,50 @@ export default function ChatPanel({
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [recording, setRecording] = useState<{ startedAt: number } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [voiceError, setVoiceError] = useState("");
+  const recRef = useRef<Recording | null>(null);
+
+  async function startVoice() {
+    setVoiceError("");
+    try {
+      recRef.current = await startRecording();
+      setElapsed(0);
+      setRecording({ startedAt: Date.now() });
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : "Couldn't start recording.");
+    }
+  }
+
+  async function finishVoice(keep: boolean) {
+    const rec = recRef.current;
+    const startedAt = recording?.startedAt ?? Date.now();
+    recRef.current = null;
+    setRecording(null);
+    if (!rec) return;
+    const blob = await rec.stop(keep);
+    const seconds = Math.min(
+      MAX_VOICE_SECONDS,
+      Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+    );
+    if (blob) onSendVoice(blob, seconds);
+  }
+
+  // Ticks the timer and auto-sends at the limit.
+  useEffect(() => {
+    if (!recording) return;
+    const id = setInterval(() => {
+      const s = (Date.now() - recording.startedAt) / 1000;
+      setElapsed(Math.floor(s));
+      if (s >= MAX_VOICE_SECONDS) void finishVoice(true);
+    }, 250);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- finishVoice reads refs
+  }, [recording]);
+
+  // Never leave the mic open: drop an unsent note if the panel goes away.
+  useEffect(() => () => void recRef.current?.stop(false), []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -162,6 +217,8 @@ export default function ChatPanel({
             >
               {m.photo ? (
                 <Photo src={m.photo} mine={m.mine} />
+              ) : m.voice ? (
+                <VoiceNote {...m.voice} mine={m.mine} />
               ) : (
                 <span
                   className={`max-w-[80%] whitespace-pre-wrap break-words px-4 py-2.5 text-[15px] leading-snug ${
@@ -179,6 +236,47 @@ export default function ChatPanel({
         <div ref={endRef} />
       </div>
 
+      {voiceError && (
+        <p role="alert" className="border-t border-line px-5 pt-2 text-xs text-amber-300">
+          {voiceError}
+        </p>
+      )}
+      {recording ? (
+        <div className="flex items-center gap-2 border-t border-line p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => void finishVoice(false)}
+            aria-label="Cancel voice note"
+            title="Cancel"
+            className="btn-ghost grid size-12 shrink-0 place-items-center rounded-full"
+          >
+            <CloseIcon />
+          </button>
+          <div
+            className="flex h-12 flex-1 items-center gap-3 rounded-full border border-line bg-white/[0.05] px-5 text-[15px]"
+            role="timer"
+            aria-label="Recording voice note"
+          >
+            <span className="size-2.5 animate-pulse rounded-full bg-red-500" />
+            <span className="tabular-nums">{clock(elapsed)}</span>
+            <span className="text-xs text-ink-faint">/ {clock(MAX_VOICE_SECONDS)}</span>
+            <span className="ml-auto h-1 w-16 overflow-hidden rounded-full bg-white/10">
+              <span
+                className="block h-full bg-red-500 transition-[width] duration-300"
+                style={{ width: `${(elapsed / MAX_VOICE_SECONDS) * 100}%` }}
+              />
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void finishVoice(true)}
+            aria-label="Send voice note"
+            className="btn-primary grid size-12 shrink-0 place-items-center rounded-full"
+          >
+            <SendIcon />
+          </button>
+        </div>
+      ) : (
       <form
         onSubmit={submit}
         className="flex items-center gap-2 border-t border-line p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
@@ -211,15 +309,29 @@ export default function ChatPanel({
           aria-label="Message"
           className="h-12 flex-1 rounded-full border border-line bg-white/[0.05] px-5 text-[15px] outline-none transition placeholder:text-ink-faint focus:border-accent/50 focus:bg-white/[0.08] disabled:opacity-50"
         />
-        <button
-          type="submit"
-          disabled={!connected || !draft.trim()}
-          aria-label="Send"
-          className="btn-primary grid size-12 shrink-0 place-items-center rounded-full disabled:opacity-35"
-        >
-          <SendIcon />
-        </button>
+        {draft.trim() ? (
+          <button
+            type="submit"
+            disabled={!connected}
+            aria-label="Send"
+            className="btn-primary grid size-12 shrink-0 place-items-center rounded-full disabled:opacity-35"
+          >
+            <SendIcon />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void startVoice()}
+            disabled={!connected}
+            aria-label={`Record a voice note (up to ${MAX_VOICE_SECONDS} seconds)`}
+            title={`Voice note, up to ${MAX_VOICE_SECONDS}s`}
+            className="btn-primary grid size-12 shrink-0 place-items-center rounded-full disabled:opacity-35"
+          >
+            <MicIcon />
+          </button>
+        )}
       </form>
+      )}
     </section>
   );
 }
@@ -246,6 +358,60 @@ function Photo({ src, mine }: { src: string; mine: boolean }) {
           🛡️ Tap to view
         </span>
       )}
+    </button>
+  );
+}
+
+function clock(s: number) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Never autoplays: a stranger's voice only plays when you tap it.
+function VoiceNote({ src, seconds, mine }: { src: string; seconds: number; mine: boolean }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const a = ref.current;
+        if (!a) return;
+        if (a.paused) void a.play().catch(() => {});
+        else a.pause();
+      }}
+      aria-label={`${mine ? "Your" : "Stranger's"} voice note, ${seconds} seconds, ${playing ? "pause" : "play"}`}
+      className={`flex w-56 max-w-[80%] items-center gap-3 px-4 py-2.5 text-sm ${
+        mine
+          ? "rounded-[20px] rounded-br-md bg-gradient-to-br from-accent to-[#5ee0f0] text-[#04120d]"
+          : "rounded-[20px] rounded-bl-md bg-white/[0.08] text-ink"
+      }`}
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-black/15 text-xs">
+        {playing ? "❚❚" : "▶"}
+      </span>
+      <span className="h-1 flex-1 overflow-hidden rounded-full bg-current/20">
+        <span
+          className="block h-full bg-current"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </span>
+      <span className="tabular-nums text-xs opacity-80">{clock(seconds)}</span>
+      <audio
+        ref={ref}
+        src={src}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setProgress(0);
+        }}
+        // Recorder output often lacks a duration header, so use our own.
+        onTimeUpdate={(e) =>
+          setProgress(Math.min(1, e.currentTarget.currentTime / seconds))
+        }
+      />
     </button>
   );
 }

@@ -79,8 +79,8 @@ export default function Home() {
   const myVibeRef = useRef<VibeId>(DEFAULT_VIBE);
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
-  // Object URLs for photos in the current chat; revoked when it ends.
-  const photoUrls = useRef<string[]>([]);
+  // Object URLs for photos / voice notes in the current chat; revoked when it ends.
+  const mediaUrls = useRef<string[]>([]);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showNotice(text: string) {
@@ -92,13 +92,15 @@ export default function Home() {
     );
   }
 
-  function addMessage(mine: boolean, text: string, photo?: Blob) {
-    let url: string | undefined;
-    if (photo) {
-      url = URL.createObjectURL(photo);
-      photoUrls.current.push(url);
-    }
-    setMessages((prev) => [...prev, { id: msgId.current++, mine, text, photo: url }]);
+  function addMessage(mine: boolean, text: string, extra?: Pick<ChatMessage, "photo" | "voice">) {
+    setMessages((prev) => [...prev, { id: msgId.current++, mine, text, ...extra }]);
+  }
+
+  // In-memory URL for a photo or voice note, revoked when the chat ends.
+  function mediaUrl(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    mediaUrls.current.push(url);
+    return url;
   }
 
   async function sendPhoto(file: File) {
@@ -106,10 +108,21 @@ export default function Home() {
     if (!ps) return;
     try {
       const photo = await preparePhoto(file);
-      await ps.sendPhoto(photo);
-      addMessage(true, "", photo);
+      await ps.sendFile("photo", photo);
+      addMessage(true, "", { photo: mediaUrl(photo) });
     } catch (e) {
       showNotice(e instanceof Error ? e.message : "Couldn't send that photo.");
+    }
+  }
+
+  async function sendVoice(voice: Blob, seconds: number) {
+    const ps = peerRef.current;
+    if (!ps) return;
+    try {
+      await ps.sendFile("voice", voice, seconds);
+      addMessage(true, "", { voice: { src: mediaUrl(voice), seconds } });
+    } catch (e) {
+      showNotice(e instanceof Error ? e.message : "Couldn't send that voice note.");
     }
   }
 
@@ -121,8 +134,8 @@ export default function Home() {
     setRemoteStream(null);
     setVideo("none");
     setMessages([]);
-    photoUrls.current.forEach((u) => URL.revokeObjectURL(u));
-    photoUrls.current = [];
+    mediaUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    mediaUrls.current = [];
     setConn({ kind: "idle" });
     if (message) showNotice(message);
   }
@@ -133,7 +146,9 @@ export default function Home() {
         void sendSignal(secret, peerId, type, payload);
       },
       onChat: (text) => addMessage(false, text),
-      onPhoto: (photo) => addMessage(false, "", photo),
+      onPhoto: (photo) => addMessage(false, "", { photo: mediaUrl(photo) }),
+      onVoice: (voice, seconds) =>
+        addMessage(false, "", { voice: { src: mediaUrl(voice), seconds } }),
       onControl: (ctrl) => handleControl(ctrl),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onConnectionState: (state) => {
@@ -524,6 +539,7 @@ export default function Home() {
           icebreaker={peerId ? icebreaker(peerVibe.id, peerId, promptTurn) : ""}
           onShuffle={() => setPromptTurn((t) => t + 1)}
           onSendPhoto={sendPhoto}
+          onSendVoice={sendVoice}
           onSend={(text) => {
             peerRef.current?.sendChat(text);
             addMessage(true, text);

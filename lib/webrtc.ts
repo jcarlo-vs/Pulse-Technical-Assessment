@@ -1,5 +1,6 @@
 import { blurredCamera, type BlurredCamera } from "./blur";
 import { isJpeg, MAX_PHOTO_BYTES } from "./image";
+import { audioType, MAX_VOICE_BYTES, MAX_VOICE_SECONDS } from "./voice";
 
 export type DescType = "offer" | "answer" | "ice";
 export type PeerControl =
@@ -14,6 +15,7 @@ interface PeerCallbacks {
   onSignal: (type: DescType, payload: string) => void;
   onChat: (text: string) => void;
   onPhoto?: (photo: Blob) => void;
+  onVoice?: (voice: Blob, seconds: number) => void;
   onControl: (ctrl: PeerControl) => void;
   onRemoteStream: (stream: MediaStream | null) => void;
   onConnectionState: (state: RTCPeerConnectionState) => void;
@@ -32,8 +34,17 @@ const CONTROLS: readonly string[] = [
 // The peer is an untrusted stranger: cap what they can push at us.
 export const MAX_CHAT_LEN = 1000;
 
-// Photos travel as: {t:"img-start", size} -> binary chunks -> {t:"img-end"}.
-// The channel is reliable + ordered, so one transfer at a time is enough.
+// Photos and voice notes travel as: {t:"file-start", kind, size} -> binary
+// chunks -> {t:"file-end"}. The channel is reliable + ordered, so one
+// transfer at a time is enough (and enforced on the sending side).
+export type FileKind = "photo" | "voice";
+const MAX_BYTES: Record<FileKind, number> = {
+  photo: MAX_PHOTO_BYTES,
+  voice: MAX_VOICE_BYTES,
+};
+// Total media a stranger can push at us in one chat; beyond it, ignored.
+// Everything received lives in memory until the chat ends.
+const MAX_MEDIA_PER_CHAT = 50 * 1024 * 1024;
 const CHUNK = 16 * 1024;
 const HIGH_WATER = 1024 * 1024;
 
@@ -53,8 +64,15 @@ export class PeerSession {
   private closed = false;
   private readonly cb: PeerCallbacks;
   private pendingCandidates: RTCIceCandidateInit[] = [];
-  private incoming: { size: number; got: number; parts: ArrayBuffer[] } | null =
-    null;
+  private incoming: {
+    kind: FileKind;
+    size: number;
+    seconds: number;
+    got: number;
+    parts: ArrayBuffer[];
+  } | null = null;
+  private received = 0;
+  private sending = false;
 
   constructor(initiator: boolean, cb: PeerCallbacks) {
     this.cb = cb;
@@ -102,7 +120,7 @@ export class PeerSession {
     dc.binaryType = "arraybuffer";
     dc.onopen = () => this.cb.onChannelOpen();
     dc.onmessage = (e) => {
-      if (e.data instanceof ArrayBuffer) return this.onPhotoChunk(e.data);
+      if (e.data instanceof ArrayBuffer) return this.onFileChunk(e.data);
       if (typeof e.data !== "string" || e.data.length > MAX_CHAT_LEN * 8) return;
       try {
         const msg = JSON.parse(e.data);
@@ -111,12 +129,25 @@ export class PeerSession {
           if (text) this.cb.onChat(text);
         } else if (msg.t === "ctrl" && CONTROLS.includes(msg.ctrl)) {
           this.cb.onControl(msg.ctrl as PeerControl);
-        } else if (msg.t === "img-start") {
+        } else if (msg.t === "file-start") {
+          const kind: FileKind | null =
+            msg.kind === "photo" || msg.kind === "voice" ? msg.kind : null;
           const ok =
-            Number.isInteger(msg.size) && msg.size > 0 && msg.size <= MAX_PHOTO_BYTES;
-          this.incoming = ok ? { size: msg.size, got: 0, parts: [] } : null;
-        } else if (msg.t === "img-end") {
-          this.finishPhoto();
+            kind &&
+            Number.isInteger(msg.size) &&
+            msg.size > 0 &&
+            msg.size <= MAX_BYTES[kind] &&
+            this.received + msg.size <= MAX_MEDIA_PER_CHAT;
+          // Display-only, so just clamp whatever the peer claims.
+          const seconds = Math.min(
+            MAX_VOICE_SECONDS,
+            Math.max(1, Math.round(Number(msg.seconds) || 1)),
+          );
+          this.incoming = ok
+            ? { kind, size: msg.size, seconds, got: 0, parts: [] }
+            : null;
+        } else if (msg.t === "file-end") {
+          this.finishFile();
         }
       } catch {}
     };
@@ -176,7 +207,7 @@ export class PeerSession {
   }
 
   // The peer is untrusted: drop anything over the declared (capped) size.
-  private onPhotoChunk(chunk: ArrayBuffer) {
+  private onFileChunk(chunk: ArrayBuffer) {
     const p = this.incoming;
     if (!p) return;
     p.got += chunk.byteLength;
@@ -187,30 +218,42 @@ export class PeerSession {
     p.parts.push(chunk);
   }
 
-  private finishPhoto() {
+  private finishFile() {
     const p = this.incoming;
     this.incoming = null;
     if (!p || p.got !== p.size) return;
-    if (!isJpeg(new Uint8Array(p.parts[0] ?? new ArrayBuffer(0)))) return;
-    this.cb.onPhoto?.(new Blob(p.parts, { type: "image/jpeg" }));
+    this.received += p.size;
+    const head = new Uint8Array(p.parts[0] ?? new ArrayBuffer(0));
+    if (p.kind === "photo") {
+      if (isJpeg(head)) this.cb.onPhoto?.(new Blob(p.parts, { type: "image/jpeg" }));
+    } else {
+      const type = audioType(head);
+      if (type) this.cb.onVoice?.(new Blob(p.parts, { type }), p.seconds);
+    }
   }
 
-  async sendPhoto(photo: Blob): Promise<void> {
+  async sendFile(kind: FileKind, file: Blob, seconds = 0): Promise<void> {
     const dc = this.dc;
     if (!dc || dc.readyState !== "open") throw new Error("Not connected.");
-    const bytes = await photo.arrayBuffer();
-    dc.send(JSON.stringify({ t: "img-start", size: bytes.byteLength }));
-    dc.bufferedAmountLowThreshold = HIGH_WATER / 2;
-    for (let i = 0; i < bytes.byteLength; i += CHUNK) {
-      if (dc.bufferedAmount > HIGH_WATER) {
-        await new Promise((r) =>
-          dc.addEventListener("bufferedamountlow", r, { once: true }),
-        );
+    if (this.sending) throw new Error("Wait for the last one to finish sending.");
+    this.sending = true;
+    try {
+      const bytes = await file.arrayBuffer();
+      dc.send(JSON.stringify({ t: "file-start", kind, size: bytes.byteLength, seconds }));
+      dc.bufferedAmountLowThreshold = HIGH_WATER / 2;
+      for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+        if (dc.bufferedAmount > HIGH_WATER) {
+          await new Promise((r) =>
+            dc.addEventListener("bufferedamountlow", r, { once: true }),
+          );
+        }
+        if (dc.readyState !== "open") throw new Error("Connection closed.");
+        dc.send(bytes.slice(i, i + CHUNK));
       }
-      if (dc.readyState !== "open") throw new Error("Connection closed.");
-      dc.send(bytes.slice(i, i + CHUNK));
+      dc.send(JSON.stringify({ t: "file-end" }));
+    } finally {
+      this.sending = false;
     }
-    dc.send(JSON.stringify({ t: "img-end" }));
   }
 
   sendControl(ctrl: PeerControl) {
