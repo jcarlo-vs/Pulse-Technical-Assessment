@@ -17,6 +17,7 @@ model Presence {
   lng      Float
   busy     Boolean  @default(false) // true while in an active connection
   peerId   String? // pending request target, or active partner when busy
+  vibe     String   @default("chat") // mood picked on entry (lib/vibes.ts)
   lastSeen DateTime
 
   @@index([lastSeen])

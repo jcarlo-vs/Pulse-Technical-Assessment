@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   // 3) Online peers (self included, so we can check our own pairing below).
   const rows = await prisma.presence.findMany({
     where: { lastSeen: { gte: staleCutoff } },
-    select: { id: true, lat: true, lng: true, busy: true, peerId: true },
+    select: { id: true, lat: true, lng: true, busy: true, peerId: true, vibe: true },
   });
   const me = rows.find((r) => r.id === id);
 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
   const response: PollResponse = {
     peers: rows
       .filter((p) => p.id !== id)
-      .map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, busy: p.busy })),
+      .map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, busy: p.busy, vibe: p.vibe })),
     signals,
   };
 
