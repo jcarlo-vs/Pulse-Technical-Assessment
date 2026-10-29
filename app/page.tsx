@@ -606,10 +606,10 @@ export default function Home() {
 
       {video === "incoming" && (
         <ConnectionPrompt
-          title="Start a video call?"
-          subtitle="Video starts blurred for both of you. Each of you decides when to show yourself, and whether to see the other clearly."
-          acceptLabel="Turn on camera"
-          declineLabel="Stay in chat"
+          title="Your match wants to video call"
+          subtitle="If you accept, you'll both start blurred. Nobody sees you clearly until you choose to show yourself."
+          acceptLabel="Accept"
+          declineLabel="Decline"
           color={color}
           icon={<span className="text-2xl">🛡️</span>}
           onAccept={acceptVideo}
