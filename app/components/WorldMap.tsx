@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
-import type { PeerDot } from "@/lib/types";
+import type { Glance, PeerDot } from "@/lib/types";
 import { LocateIcon } from "./icons";
 import { vibeOf } from "@/lib/vibes";
 
@@ -18,6 +18,7 @@ export default function WorldMap({
   onPeerClick,
   canConnect,
   focus,
+  preview,
 }: {
   peers: PeerDot[];
   me: { lat: number; lng: number } | null;
@@ -26,12 +27,15 @@ export default function WorldMap({
   canConnect: boolean;
   // Fly here when it changes (used by "Find someone").
   focus?: { lat: number; lng: number } | null;
+  // Coarse live activity shown on the entry screen, before joining.
+  preview?: Glance["spots"];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
   const markersRef = useRef<Map<string, Marker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
   const spinRef = useRef(true);
+  const spotsRef = useRef<Map<string, Marker>>(new Map());
   const [ready, setReady] = useState(false);
 
   // Marker click handlers are bound once, so read the live click handler +
@@ -64,6 +68,14 @@ export default function WorldMap({
         zoom: window.innerWidth < 768 ? 0.9 : 1.6,
         attributionControl: false,
       });
+      // Until the user lands, keep the globe clear of the entry panel
+      // (right half on desktop, bottom sheet on phones).
+      const desktop = window.innerWidth >= 768;
+      map.setPadding(
+        desktop
+          ? { top: 0, bottom: 0, left: 0, right: Math.min(600, window.innerWidth * 0.48) }
+          : { top: 0, left: 0, right: 0, bottom: window.innerHeight * 0.55 },
+      );
       map.addControl(
         new mapboxgl.AttributionControl({ compact: true }),
         "bottom-right",
@@ -128,6 +140,7 @@ export default function WorldMap({
         map.flyTo({
           center: [me.lng, me.lat],
           zoom: 4.5,
+          padding: { top: 0, bottom: 0, left: 0, right: 0 },
           speed: 0.9,
           curve: 1.6,
           essential: true,
@@ -207,6 +220,39 @@ export default function WorldMap({
       cancelled = true;
     };
   }, [peers, ready]);
+
+  // Entry-screen activity: decorative, non-interactive markers that animate
+  // by status (available / in a call / waiting for an answer).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false;
+    const spots = spotsRef.current;
+    (async () => {
+      const mapboxgl = (await import("mapbox-gl")).default;
+      if (cancelled) return;
+      const seen = new Set<string>();
+      for (const s of preview ?? []) {
+        const key = `${s.lat},${s.lng},${s.s}`;
+        seen.add(key);
+        if (spots.has(key)) continue;
+        const el = document.createElement("div");
+        el.className = `spot spot-${s.s}`;
+        el.setAttribute("aria-hidden", "true");
+        el.style.setProperty("--d", `${(Math.random() * 2.4).toFixed(2)}s`);
+        spots.set(key, new mapboxgl.Marker({ element: el }).setLngLat([s.lng, s.lat]).addTo(map));
+      }
+      for (const [key, m] of spots) {
+        if (!seen.has(key)) {
+          m.remove();
+          spots.delete(key);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, ready]);
 
   useEffect(() => {
     if (!focus || !mapRef.current) return;

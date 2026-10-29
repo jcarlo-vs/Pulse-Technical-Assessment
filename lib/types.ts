@@ -31,3 +31,10 @@ export interface PollResponse {
   peers: PeerDot[];
   signals: SignalMsg[];
 }
+
+// Public, coarse snapshot for the entry screen (/api/glance).
+export type GlanceStatus = "available" | "call" | "waiting";
+export interface Glance {
+  counts: { available: number; inCall: number; waiting: number };
+  spots: { lat: number; lng: number; s: GlanceStatus }[];
+}

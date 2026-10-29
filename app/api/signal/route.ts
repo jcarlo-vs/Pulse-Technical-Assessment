@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { badRequest, idFromSecret, readJson, unauthorized } from "@/lib/session";
+import { compatible } from "@/lib/match";
 import type { SignalType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -72,7 +73,9 @@ export async function POST(request: NextRequest) {
       // Offline or busy target: answer in the response instead of writing a
       // "decline" that appears to come from the target (unmetered by the
       // flood guard, and a forged sender).
-      if (!target || target.busy) {
+      // Not a mutual match: answer exactly like "busy" so a request can't
+      // be used to probe someone's preferences.
+      if (!target || target.busy || !compatible(me, target)) {
         return Response.json({ ok: true, autoDeclined: true });
       }
       await prisma.presence.update({

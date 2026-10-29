@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { STALE_MS, SIGNAL_TTL_MS } from "@/lib/presence";
 import { badRequest, idFromSecret, readJson, unauthorized } from "@/lib/session";
 import type { PollResponse, SignalMsg } from "@/lib/types";
+import { compatible, isSeeking } from "@/lib/match";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/poll - body { secret }. POST (not GET ?id=) so the session secret
+// POST /api/poll - body { secret, seeking? }. POST (not GET ?id=) so the session secret
 // never lands in URLs, access logs or browser history.
 // It (1) heartbeats the caller, (2) reaps stale presence + orphan signals,
 // (3) returns the online peers, and (4) drains this user's mailbox.
@@ -21,10 +22,14 @@ export async function POST(request: NextRequest) {
   const staleCutoff = new Date(now - STALE_MS);
   const signalCutoff = new Date(now - SIGNAL_TTL_MS);
 
-  // 1) Heartbeat - refresh lastSeen for the caller.
+  // 1) Heartbeat - refresh lastSeen for the caller, plus who they're looking
+  // for (changeable any time from the map).
   const touched = await prisma.presence.updateMany({
     where: { id },
-    data: { lastSeen: new Date(now) },
+    data: {
+      lastSeen: new Date(now),
+      ...(isSeeking(body.seeking) ? { seeking: body.seeking } : {}),
+    },
   });
   // Row was reaped (e.g. a backgrounded tab's timers were throttled past
   // STALE_MS). Tell the client to re-join instead of polling as a ghost.
@@ -40,7 +45,16 @@ export async function POST(request: NextRequest) {
   // 3) Online peers (self included, so we can check our own pairing below).
   const rows = await prisma.presence.findMany({
     where: { lastSeen: { gte: staleCutoff } },
-    select: { id: true, lat: true, lng: true, busy: true, peerId: true, vibe: true },
+    select: {
+      id: true,
+      lat: true,
+      lng: true,
+      busy: true,
+      peerId: true,
+      vibe: true,
+      gender: true,
+      seeking: true,
+    },
   });
   const me = rows.find((r) => r.id === id);
 
@@ -83,8 +97,14 @@ export async function POST(request: NextRequest) {
   }
 
   const response: PollResponse = {
+    // Only people who match both ways (plus whoever we're already talking
+    // to). Gender itself never leaves the server.
     peers: rows
-      .filter((p) => p.id !== id)
+      .filter(
+        (p) =>
+          p.id !== id &&
+          (!me || compatible(me, p) || p.id === me.peerId || p.peerId === id),
+      )
       .map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, busy: p.busy, vibe: p.vibe })),
     signals,
   };

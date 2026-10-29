@@ -3,15 +3,29 @@
 import { useEffect, useState } from "react";
 import { GhostIcon, PinIcon, ShieldIcon } from "./icons";
 import { DEFAULT_VIBE, VIBES, type VibeId } from "@/lib/vibes";
+import {
+  DEFAULT_GENDER,
+  DEFAULT_SEEKING,
+  GENDERS,
+  SEEKING,
+  type Gender,
+  type Seeking,
+} from "@/lib/match";
+import type { Profile } from "@/lib/api";
+import type { Glance } from "@/lib/types";
 
 // Landing overlay. Sits on top of the live, slowly spinning globe so the
 // first thing people see is the product, not a form.
 export default function EntryGate({
   onReady,
+  counts,
 }: {
-  onReady: (lat: number, lng: number, vibe: VibeId) => Promise<void>;
+  onReady: (lat: number, lng: number, profile: Profile) => Promise<void>;
+  counts?: Glance["counts"];
 }) {
   const [vibe, setVibe] = useState<VibeId>(DEFAULT_VIBE);
+  const [gender, setGender] = useState<Gender>(DEFAULT_GENDER);
+  const [seeking, setSeeking] = useState<Seeking>(DEFAULT_SEEKING);
   const [status, setStatus] = useState<"idle" | "locating" | "error">("idle");
   const [error, setError] = useState<string>("");
   // geolocation waits indefinitely on an unanswered permission prompt (the
@@ -40,7 +54,11 @@ export default function EntryGate({
     setStatus("locating");
     navigator.geolocation.getCurrentPosition(
       (pos) =>
-        onReady(pos.coords.latitude, pos.coords.longitude, vibe).catch(() =>
+        onReady(pos.coords.latitude, pos.coords.longitude, {
+          vibe,
+          gender,
+          seeking,
+        }).catch(() =>
           fail("Couldn't reach Pulse. Check your connection and try again."),
         ),
       (err) =>
@@ -55,50 +73,75 @@ export default function EntryGate({
     );
   }
 
-  return (
-    <div className="pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-end bg-[radial-gradient(ellipse_at_center,transparent_20%,rgba(5,6,13,0.55)_60%,rgba(5,6,13,0.95)_100%)] px-5 pb-[max(2rem,env(safe-area-inset-bottom))] md:justify-center md:pb-0">
-      <div className="anim-rise pointer-events-auto w-full max-w-md text-center [text-shadow:0_1px_16px_rgba(5,6,13,0.95)]">
-        <Wordmark />
-        <p className="mx-auto mt-3 max-w-sm text-balance text-[15px] leading-relaxed text-ink-dim">
-          Every glowing dot is a real person, right now. Tap one and say hello.
-        </p>
+  const current = VIBES.find((v) => v.id === vibe) ?? VIBES[0];
 
-        <fieldset className="mt-7">
-          <legend className="mb-2.5 w-full text-xs font-medium uppercase tracking-[0.14em] text-ink-faint">
-            What&rsquo;s your vibe?
-          </legend>
-          <div className="grid grid-cols-3 gap-2 [text-shadow:none]">
-            {VIBES.map((v) => {
-              const active = v.id === vibe;
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => setVibe(v.id)}
-                  aria-pressed={active}
-                  className="glass flex items-center justify-center gap-1.5 rounded-2xl px-2 py-2.5 text-[13px] transition hover:bg-white/10"
-                  style={
-                    active
-                      ? {
-                          borderColor: v.color,
-                          boxShadow: `0 0 0 1px ${v.color}, 0 0 22px -6px ${v.color}`,
-                          color: "white",
-                        }
-                      : { color: "var(--ink-dim)" }
-                  }
-                >
-                  <span aria-hidden="true">{v.emoji}</span>
-                  {v.label}
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
+  return (
+    // Globe + how it works: the live globe fills the left (or top, on a
+    // phone) and the steps sit beside it. Picking a vibe *is* step 1.
+    // Desktop: globe and panel stay together as one centered pair (max
+    // 1320px), so wide screens don't strand the panel at the far edge. The
+    // map pads its right side by the same panel width (WorldMap).
+    <div className="pointer-events-none absolute inset-0 z-40 flex items-end bg-[linear-gradient(to_top,rgba(5,6,13,0.97)_45%,transparent_75%)] md:items-center md:justify-center md:bg-none">
+      {counts && <Activity counts={counts} />}
+      <div className="w-full md:flex md:max-w-[1320px] md:justify-end">
+      <div className="anim-rise pointer-events-auto max-h-[100dvh] w-full overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 md:flex md:max-h-[calc(100dvh-2rem)] md:w-[min(600px,48vw)] md:flex-col md:justify-center md:rounded-[32px] md:border md:border-line md:bg-[rgba(8,10,20,0.78)] md:px-12 md:py-10 md:backdrop-blur-xl">
+        <Wordmark />
+        <h2 className="mt-4 text-balance text-[28px] font-semibold leading-[1.1] tracking-tight md:mt-6 md:text-[44px]">
+          Talk to someone, somewhere, right now.
+        </h2>
+
+        <ol className="mt-6 space-y-5 md:mt-8">
+          <Step n={1} active title="Pick your vibe" text="So people know what you're up for before they tap.">
+            <fieldset className="mt-3">
+              <legend className="sr-only">Your vibe</legend>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {VIBES.map((v) => {
+                  const active = v.id === vibe;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setVibe(v.id)}
+                      aria-pressed={active}
+                      className="glass flex h-11 items-center gap-2 rounded-2xl px-3 text-left text-[13px] transition hover:bg-white/10"
+                      style={
+                        active
+                          ? {
+                              borderColor: v.color,
+                              background: `color-mix(in srgb, ${v.color} 14%, transparent)`,
+                              boxShadow: `0 0 0 1px ${v.color}, 0 0 22px -8px ${v.color}`,
+                              color: "white",
+                            }
+                          : { color: "var(--ink-dim)" }
+                      }
+                    >
+                      <span className="text-base" aria-hidden="true">
+                        {v.emoji}
+                      </span>
+                      <span className="truncate">{v.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          </Step>
+          <Step n={2} title="Who you'd like to talk to" text="Only people who'd also pick you can see your dot. Never shown to anyone, not verified.">
+            <div className="mt-3 space-y-2">
+              <Segmented label="I am" options={GENDERS} value={gender} onChange={setGender} />
+              <Segmented label="Talk to" options={SEEKING} value={seeking} onChange={setSeeking} />
+            </div>
+          </Step>
+          <Step n={3} title="Drop in and say hello" text="Your dot lands near you, never on your exact spot. Chat first; video starts blurred." />
+        </ol>
 
         <button
           onClick={enter}
           disabled={status === "locating"}
-          className="btn-primary mt-6 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full text-base disabled:opacity-70 sm:w-auto sm:px-12"
+          className="mt-7 inline-flex h-14 w-full items-center justify-center gap-2 rounded-full px-8 text-base font-semibold text-[#04120d] transition hover:brightness-110 disabled:opacity-70 md:w-auto md:self-start"
+          style={{
+            background: `linear-gradient(135deg, ${current.color}, #5ee0f0)`,
+            boxShadow: `0 10px 40px -12px ${current.color}`,
+          }}
         >
           {status === "locating" ? (
             <>
@@ -106,14 +149,17 @@ export default function EntryGate({
               Finding you…
             </>
           ) : (
-            "Drop onto the globe"
+            <>
+              <span aria-hidden="true">{current.emoji}</span>
+              Drop in {CTA[current.id]}
+            </>
           )}
         </button>
 
         {status === "locating" && slow && (
           <p
             role="status"
-            className="anim-fade mx-auto mt-4 max-w-sm rounded-xl border border-line bg-white/[0.04] px-4 py-2.5 text-sm text-ink-dim"
+            className="anim-fade mt-4 max-w-sm rounded-xl border border-line bg-white/[0.04] px-4 py-2.5 text-sm text-ink-dim"
           >
             Still waiting for location access. Look for a 📍 prompt near your
             browser&rsquo;s address bar and choose <b>Allow</b>.
@@ -123,34 +169,138 @@ export default function EntryGate({
         {status === "error" && (
           <p
             role="alert"
-            className="anim-fade mx-auto mt-4 max-w-sm rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-[#ffb3bd]"
+            className="anim-fade mt-4 max-w-sm rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-[#ffb3bd]"
           >
             {error}
           </p>
         )}
 
-        <ul className="mx-auto mt-8 grid max-w-sm grid-cols-3 gap-2 text-[11px] leading-snug text-ink-dim">
-          <Pledge icon={<PinIcon width={18} height={18} />}>
-            Placed 1-3&nbsp;km from you
-          </Pledge>
-          <Pledge icon={<GhostIcon width={18} height={18} />}>
-            No accounts, no names
-          </Pledge>
-          <Pledge icon={<ShieldIcon width={18} height={18} />}>
-            Nothing stored. Ever.
-          </Pledge>
+        <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-ink-dim">
+          <Pledge icon={<PinIcon width={15} height={15} />}>Exact spot never shown</Pledge>
+          <Pledge icon={<GhostIcon width={15} height={15} />}>No accounts, no names</Pledge>
+          <Pledge icon={<ShieldIcon width={15} height={15} />}>Nothing stored</Pledge>
         </ul>
+      </div>
       </div>
     </div>
   );
 }
 
+const CTA: Record<VibeId, string> = {
+  chat: "to just chat",
+  music: "for music",
+  night: "because you can't sleep",
+  travel: "for travel stories",
+  study: "to study together",
+  advice: "for advice",
+};
+
+// Live, real counts under the globe: the page promises every dot is a real
+// person, so nothing here is simulated. Empty is said out loud.
+function Activity({ counts }: { counts: Glance["counts"] }) {
+  const total = counts.available + counts.inCall + counts.waiting;
+  return (
+    <div
+      aria-live="polite"
+      className="glass anim-fade pointer-events-auto absolute left-1/2 top-[max(1rem,env(safe-area-inset-top))] flex -translate-x-1/2 flex-wrap items-center justify-center gap-x-4 gap-y-1 whitespace-nowrap rounded-full px-4 py-2 text-xs text-ink-dim md:bottom-8 md:left-[calc((100vw-min(600px,48vw))/2)] md:top-auto md:text-sm"
+    >
+      {total === 0 ? (
+        <span>Nobody here yet. Be the first to light up the globe.</span>
+      ) : (
+        <>
+          <Count color="#7cf5c8" n={counts.available} label="available" pulse />
+          <Count color="#a08cff" n={counts.inCall} label="in a call" />
+          <Count color="#ffb86b" n={counts.waiting} label="waiting" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function Count({ color, n, label, pulse }: { color: string; n: number; label: string; pulse?: boolean }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span
+        className={`size-2 rounded-full ${pulse ? "animate-pulse" : ""}`}
+        style={{ background: color, boxShadow: `0 0 8px ${color}` }}
+      />
+      <b className="font-semibold tabular-nums text-ink">{n}</b> {label}
+    </span>
+  );
+}
+
+function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly { id: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex items-center gap-2">
+      <span className="w-14 shrink-0 text-xs text-ink-faint">{label}</span>
+      <div className="glass flex flex-1 gap-1 rounded-full p-1">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={value === o.id}
+            onClick={() => onChange(o.id)}
+            className={`h-9 flex-1 truncate rounded-full px-2 text-[13px] transition ${
+              value === o.id ? "bg-white font-medium text-black" : "text-ink-dim hover:text-ink"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Step({
+  n,
+  active,
+  title,
+  text,
+  children,
+}: {
+  n: number;
+  active?: boolean;
+  title: string;
+  text: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <li className="flex gap-4">
+      <span
+        className={`grid size-8 shrink-0 place-items-center rounded-full text-sm font-semibold ${
+          active ? "bg-accent text-[#04120d]" : "bg-accent/10 text-accent"
+        }`}
+        aria-hidden="true"
+      >
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold leading-tight">{title}</p>
+        <p className="mt-0.5 text-sm leading-snug text-ink-dim">{text}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
 function Wordmark() {
   return (
-    <h1 className="flex items-center justify-center gap-3">
+    <h1 className="flex items-center gap-2.5">
       <svg
         viewBox="0 0 64 32"
-        className="h-9 w-[4.5rem] text-accent drop-shadow-[0_0_12px_rgba(124,245,200,0.7)]"
+        className="h-7 w-14 text-accent drop-shadow-[0_0_12px_rgba(124,245,200,0.7)]"
         aria-hidden="true"
       >
         <path
@@ -164,7 +314,7 @@ function Wordmark() {
           style={{ animation: "heartbeat 2.4s ease-out infinite" }}
         />
       </svg>
-      <span className="text-gradient text-5xl font-semibold tracking-tight">
+      <span className="text-gradient text-3xl font-semibold tracking-tight">
         Pulse
       </span>
     </h1>
@@ -179,7 +329,7 @@ function Pledge({
   children: React.ReactNode;
 }) {
   return (
-    <li className="glass flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3">
+    <li className="flex items-center gap-1.5">
       <span className="text-accent">{icon}</span>
       {children}
     </li>

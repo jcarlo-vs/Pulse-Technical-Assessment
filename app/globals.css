@@ -197,6 +197,63 @@ body {
   animation: pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* Entry-screen activity (coarse, decorative, never clickable). */
+.spot {
+  --c: #7cf5c8;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.spot::before,
+.spot::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+}
+.spot::before {
+  inset: 5px;
+  background: var(--c);
+  box-shadow: 0 0 10px 2px var(--c);
+}
+.spot::after {
+  inset: 0;
+  border: 1.5px solid var(--c);
+  animation: spot-ping 2.4s ease-out infinite var(--d, 0s);
+}
+.spot-call {
+  --c: #a08cff;
+}
+/* In a call: two dots circling each other. */
+.spot-call::before {
+  inset: 6px 10px 6px 2px;
+}
+.spot-call::after {
+  inset: 6px 2px 6px 10px;
+  border: 0;
+  background: var(--c);
+  box-shadow: 0 0 10px 2px var(--c);
+  animation: spot-orbit 3s linear infinite var(--d, 0s);
+  transform-origin: -2px 50%;
+}
+/* Waiting for an answer: a slow, hopeful blink. */
+.spot-waiting {
+  --c: #ffb86b;
+}
+.spot-waiting::before {
+  animation: spot-wait 1.6s ease-in-out infinite var(--d, 0s);
+}
+@keyframes spot-ping {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes spot-orbit {
+  to { transform: rotate(360deg); }
+}
+@keyframes spot-wait {
+  50% { opacity: 0.25; }
+}
+
 /* You. */
 .me {
   position: relative;

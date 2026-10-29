@@ -1,6 +1,13 @@
 // Client-side helpers for talking to the coordination API. Every call
 // authenticates with this tab's session secret, sent only in POST bodies.
 import type { PollResponse, SignalType } from "@/lib/types";
+import type { Gender, Seeking } from "@/lib/match";
+
+export interface Profile {
+  vibe: string;
+  gender: Gender;
+  seeking: Seeking;
+}
 
 // 256-bit random session secret, hex encoded. Lives only in this tab's memory.
 export function newSecret(): string {
@@ -23,18 +30,22 @@ export async function join(
   secret: string,
   lat: number,
   lng: number,
-  vibe: string,
+  profile: Profile,
   rejoin = false,
 ): Promise<{ lat: number; lng: number }> {
-  const res = await post("/api/join", { secret, lat, lng, vibe, rejoin });
+  const res = await post("/api/join", { secret, lat, lng, ...profile, rejoin });
   if (!res.ok) throw new Error(`join failed: ${res.status}`);
   const data = await res.json();
   return { lat: data.lat, lng: data.lng };
 }
 
 // Returns null when the server no longer knows this session (caller must re-join).
-export async function poll(secret: string): Promise<PollResponse | null> {
-  const res = await post("/api/poll", { secret });
+// `seeking` rides along so the "looking for" switch applies on the next poll.
+export async function poll(
+  secret: string,
+  seeking: Seeking,
+): Promise<PollResponse | null> {
+  const res = await post("/api/poll", { secret, seeking });
   if (res.status === 410) return null;
   if (!res.ok) throw new Error(`poll failed: ${res.status}`);
   return res.json();

@@ -7,14 +7,15 @@ import VibeFilter from "./components/VibeFilter";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
-import { VideoIcon } from "./components/icons";
-import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
+import { CloseIcon, VideoIcon } from "./components/icons";
+import { join, leave, newSecret, poll, sendSignal, type Profile } from "@/lib/api";
+import { DEFAULT_GENDER, DEFAULT_SEEKING, SEEKING, type Seeking } from "@/lib/match";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { preparePhoto } from "@/lib/image";
 import { distanceKm, formatDistance, placeName } from "@/lib/geo";
 import { startRing } from "@/lib/ring";
-import { type PeerDot, type SignalMsg } from "@/lib/types";
+import { type Glance, type PeerDot, type SignalMsg } from "@/lib/types";
 import { DEFAULT_VIBE, icebreaker, vibeOf, type VibeId } from "@/lib/vibes";
 
 type Conn =
@@ -75,6 +76,10 @@ export default function Home() {
   const [myVibe, setMyVibe] = useState<VibeId>(DEFAULT_VIBE);
   const [filter, setFilter] = useState<VibeId | null>(null);
   const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
+  const [found, setFound] = useState<string | null>(null);
+  // Coarse live activity for the entry screen (before joining).
+  const [glance, setGlance] = useState<Glance | null>(null);
+  const skipped = useRef<Set<string>>(new Set());
   // Rough place name of whoever we're calling / talking to.
   const [place, setPlace] = useState<{ peerId: string; name: string } | null>(null);
   const [promptTurn, setPromptTurn] = useState(0);
@@ -82,7 +87,17 @@ export default function Home() {
   // Our *offset* position, re-sent as-is if we get reaped and must re-join.
   // (The raw location is never kept after the first join.)
   const myLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const myVibeRef = useRef<VibeId>(DEFAULT_VIBE);
+  const profileRef = useRef<Profile>({
+    vibe: DEFAULT_VIBE,
+    gender: DEFAULT_GENDER,
+    seeking: DEFAULT_SEEKING,
+  });
+  // "Looking for" switch on the map; the next poll tells the server.
+  const [seeking, _setSeeking] = useState<Seeking>(DEFAULT_SEEKING);
+  const setSeeking = (s: Seeking) => {
+    profileRef.current = { ...profileRef.current, seeking: s };
+    _setSeeking(s);
+  };
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
   // Object URLs for photos / voice notes in the current chat; revoked when it ends.
@@ -231,13 +246,31 @@ export default function Home() {
     }, REQUEST_TIMEOUT_MS);
   }
 
-  // "Find someone": a random free person within the current vibe filter.
+  // "Find someone": preview a random free match within the current vibe
+  // filter; the user then says hello or skips to the next one.
   function findSomeone() {
     const free = peers.filter((p) => !p.busy && (!filter || p.vibe === filter));
-    const pick = free[Math.floor(Math.random() * free.length)];
-    if (!pick) return;
+    let pool = free.filter((p) => !skipped.current.has(p.id));
+    if (pool.length === 0) {
+      skipped.current.clear(); // seen everyone: start the round again
+      pool = free;
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (!pick) return setFound(null);
     setFocus({ lat: pick.lat, lng: pick.lng });
-    requestConnection(pick.id);
+    setFound(pick.id);
+  }
+
+  function skipFound() {
+    if (found) skipped.current.add(found);
+    findSomeone();
+  }
+
+  function callFound() {
+    if (!found) return;
+    const id = found;
+    setFound(null);
+    requestConnection(id);
   }
 
   function cancelRequest() {
@@ -381,12 +414,12 @@ export default function Home() {
 
     const tick = async () => {
       try {
-        const data = await poll(secret);
+        const data = await poll(secret, profileRef.current.seeking);
         if (!active) return;
         if (!data) {
           if (myLocationRef.current) {
             const { lat, lng } = myLocationRef.current;
-            await join(secret, lat, lng, myVibeRef.current, true);
+            await join(secret, lat, lng, profileRef.current, true);
           }
         } else {
           setPeers(data.peers);
@@ -404,6 +437,22 @@ export default function Home() {
   }, [phase, secret]);
 
   useEffect(() => {
+    if (phase === "live") return;
+    let active = true;
+    const load = () =>
+      fetch("/api/glance", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((g: Glance | null) => active && g && setGlance(g))
+        .catch(() => {});
+    void load();
+    const id = setInterval(load, 8000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [phase]);
+
+  useEffect(() => {
     if (!secret || phase !== "live") return;
     const onLeave = () => leave(secret);
     window.addEventListener("pagehide", onLeave);
@@ -414,11 +463,12 @@ export default function Home() {
     };
   }, [secret, phase]);
 
-  async function handleReady(lat: number, lng: number, vibe: VibeId) {
-    myVibeRef.current = vibe;
-    setMyVibe(vibe);
+  async function handleReady(lat: number, lng: number, profile: Profile) {
+    profileRef.current = profile;
+    setMyVibe(profile.vibe as VibeId);
+    setSeeking(profile.seeking);
     // Show the user the offset position others see, not their exact spot.
-    const placed = await join(secret, lat, lng, vibe);
+    const placed = await join(secret, lat, lng, profile);
     myLocationRef.current = placed;
     setMyLocation(placed);
     setPhase("live");
@@ -428,7 +478,7 @@ export default function Home() {
   const ringing = conn.kind === "incoming" || video === "incoming";
   useEffect(() => (ringing ? startRing() : undefined), [ringing]);
 
-  const livePeerId = conn.kind === "idle" ? null : conn.peerId;
+  const livePeerId = conn.kind === "idle" ? found : conn.peerId;
   const livePeer = peers.find((p) => p.id === livePeerId);
   useEffect(() => {
     if (!livePeer) return;
@@ -466,9 +516,10 @@ export default function Home() {
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
         focus={focus}
+        preview={live ? undefined : glance?.spots}
       />
 
-      {!live && <EntryGate onReady={handleReady} />}
+      {!live && <EntryGate onReady={handleReady} counts={glance?.counts} />}
 
       {live && (
         <header className={`anim-fade pointer-events-none absolute inset-x-0 top-0 z-20 ${inChat ? "md:right-[420px]" : ""} flex items-start justify-between gap-3 p-4 pt-[max(1rem,env(safe-area-inset-top))]`}>
@@ -497,17 +548,85 @@ export default function Home() {
         <VibeFilter peers={peers} value={filter} onChange={setFilter} />
       )}
 
-      {live && conn.kind === "idle" && available > 0 && (
-        <button
-          onClick={findSomeone}
-          className="btn-primary anim-rise absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+3.25rem)] left-1/2 z-10 flex h-11 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
-        >
-          <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
-          {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
-        </button>
+      {live && conn.kind === "idle" && !found && (
+        <div className="anim-rise absolute bottom-[calc(max(1.5rem,env(safe-area-inset-bottom))+3.25rem)] left-1/2 z-10 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2">
+          {available > 0 && (
+            <button
+              onClick={findSomeone}
+              className="btn-primary flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-5 text-sm"
+            >
+              <span aria-hidden="true">{filter ? vibeOf(filter).emoji : "🎲"}</span>
+              {filter ? `Find someone into ${vibeOf(filter).label.toLowerCase()}` : "Find someone"}
+            </button>
+          )}
+          <div
+            role="radiogroup"
+            aria-label="Looking for"
+            className="glass flex h-11 items-center gap-1 rounded-full p-1 text-sm"
+          >
+            <span className="hidden pl-3 pr-1 text-xs text-ink-faint sm:inline">Looking for</span>
+            {SEEKING.map((o) => (
+              <button
+                key={o.id}
+                role="radio"
+                aria-checked={seeking === o.id}
+                onClick={() => setSeeking(o.id)}
+                className={`h-9 rounded-full px-3.5 transition ${
+                  seeking === o.id ? "bg-white text-black" : "text-ink-dim hover:text-ink"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
-      {live && conn.kind === "idle" && (
+      {live && conn.kind === "idle" && found && livePeer && (
+        <div
+          role="dialog"
+          aria-label="Found someone"
+          className="glass-strong anim-rise absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-3xl p-5"
+        >
+          <div className="flex items-center gap-4">
+            <span
+              className="grid size-12 shrink-0 place-items-center rounded-full text-2xl"
+              style={{
+                background: `color-mix(in srgb, ${vibeOf(livePeer.vibe).color} 22%, transparent)`,
+                boxShadow: `0 0 0 1px ${vibeOf(livePeer.vibe).color}, 0 0 24px -6px ${vibeOf(livePeer.vibe).color}`,
+              }}
+              aria-hidden="true"
+            >
+              {vibeOf(livePeer.vibe).emoji}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Found someone</p>
+              <p className="text-sm text-ink-dim">
+                Feeling {vibeOf(livePeer.vibe).label.toLowerCase()}
+                {livePeer.vibe === myVibe ? ", same as you" : ""}
+              </p>
+              {where && <p className="mt-0.5 line-clamp-2 text-xs text-ink-faint">{where}</p>}
+            </div>
+            <button
+              onClick={() => setFound(null)}
+              aria-label="Close"
+              className="btn-ghost grid size-9 shrink-0 place-items-center self-start rounded-full"
+            >
+              <CloseIcon width={16} height={16} />
+            </button>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button onClick={skipFound} className="btn-ghost h-12 flex-1 rounded-full text-sm font-medium">
+              Skip
+            </button>
+            <button onClick={callFound} className="btn-primary h-12 flex-1 rounded-full text-sm">
+              Say hello
+            </button>
+          </div>
+        </div>
+      )}
+
+      {live && conn.kind === "idle" && !found && (
         <p className="glass anim-rise pointer-events-none absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-10 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full px-4 py-2.5 text-center text-sm text-ink-dim">
           {shown.length === 0
             ? filter

@@ -18,6 +18,8 @@ model Presence {
   busy     Boolean  @default(false) // true while in an active connection
   peerId   String? // pending request target, or active partner when busy
   vibe     String   @default("chat") // mood picked on entry (lib/vibes.ts)
+  gender   String   @default("x") // self-declared; matching only, never sent to peers
+  seeking  String   @default("any") // who they want to talk to (lib/match.ts)
   lastSeen DateTime
 
   @@index([lastSeen])
