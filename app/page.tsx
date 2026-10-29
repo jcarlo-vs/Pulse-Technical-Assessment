@@ -7,7 +7,7 @@ import { VideoIcon } from "./components/icons";
 import ConnectionPrompt from "./components/ConnectionPrompt";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
-import { join, leave, poll, sendSignal } from "@/lib/api";
+import { join, leave, newSecret, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import { type PeerDot, type SignalMsg } from "@/lib/types";
@@ -25,7 +25,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 export default function Home() {
   const [phase, setPhase] = useState<"gate" | "live">("gate");
-  const [sessionId] = useState(() => crypto.randomUUID());
+  // Never shared with other users; our public id is sha256(secret), server-side.
+  const [secret] = useState(newSecret);
   const [peers, setPeers] = useState<PeerDot[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [notice, setNotice] = useState<{ id: number; text: string } | null>(
@@ -51,7 +52,8 @@ export default function Home() {
     _setVideo(v);
   };
 
-  // Raw location, kept so the poll loop can re-join after being reaped.
+  // Our *offset* position, re-sent as-is if we get reaped and must re-join.
+  // (The raw location is never kept after the first join.)
   const myLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const peerRef = useRef<PeerSession | null>(null);
   const msgId = useRef(0);
@@ -85,7 +87,7 @@ export default function Home() {
   function startPeer(peerId: string, initiator: boolean) {
     const ps = new PeerSession(initiator, {
       onSignal: (type: DescType, payload: string) => {
-        void sendSignal(sessionId, peerId, type, payload);
+        void sendSignal(secret, peerId, type, payload);
       },
       onChat: (text) => addMessage(false, text),
       onControl: (ctrl) => handleControl(ctrl),
@@ -140,13 +142,18 @@ export default function Home() {
   function requestConnection(peerId: string) {
     if (connRef.current.kind !== "idle") return;
     setConn({ kind: "requesting", peerId });
-    void sendSignal(sessionId, peerId, "request");
+    void sendSignal(secret, peerId, "request").then((r) => {
+      const c = connRef.current;
+      if (r.autoDeclined && c.kind === "requesting" && c.peerId === peerId) {
+        teardown("They're busy right now. Try someone else.");
+      }
+    });
     requestTimer.current = setTimeout(() => {
       if (
         connRef.current.kind === "requesting" &&
         connRef.current.peerId === peerId
       ) {
-        void sendSignal(sessionId, peerId, "end");
+        void sendSignal(secret, peerId, "end");
         teardown("No answer.");
       }
     }, REQUEST_TIMEOUT_MS);
@@ -154,7 +161,7 @@ export default function Home() {
 
   function cancelRequest() {
     if (connRef.current.kind === "requesting") {
-      void sendSignal(sessionId, connRef.current.peerId, "end");
+      void sendSignal(secret, connRef.current.peerId, "end");
     }
     teardown();
   }
@@ -163,20 +170,20 @@ export default function Home() {
     if (connRef.current.kind !== "incoming") return;
     const peerId = connRef.current.peerId;
     startPeer(peerId, false);
-    void sendSignal(sessionId, peerId, "accept");
+    void sendSignal(secret, peerId, "accept");
     setConn({ kind: "connecting", peerId });
   }
 
   function declineIncoming() {
     if (connRef.current.kind !== "incoming") return;
-    void sendSignal(sessionId, connRef.current.peerId, "decline");
+    void sendSignal(secret, connRef.current.peerId, "decline");
     setConn({ kind: "idle" });
   }
 
   function endConnection() {
     const c = connRef.current;
     if (c.kind === "connecting" || c.kind === "connected") {
-      void sendSignal(sessionId, c.peerId, "end");
+      void sendSignal(secret, c.peerId, "end");
     }
     teardown();
   }
@@ -223,7 +230,7 @@ export default function Home() {
         if (connRef.current.kind === "idle") {
           setConn({ kind: "incoming", peerId: sig.fromId });
         } else {
-          void sendSignal(sessionId, sig.fromId, "decline");
+          void sendSignal(secret, sig.fromId, "decline");
         }
         break;
       }
@@ -280,18 +287,18 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (phase !== "live" || !sessionId) return;
+    if (phase !== "live" || !secret) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
-        const data = await poll(sessionId);
+        const data = await poll(secret);
         if (!active) return;
         if (!data) {
           if (myLocationRef.current) {
             const { lat, lng } = myLocationRef.current;
-            setMyLocation(await join(sessionId, lat, lng));
+            await join(secret, lat, lng, true);
           }
         } else {
           setPeers(data.peers);
@@ -306,26 +313,24 @@ export default function Home() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [phase, sessionId]);
+  }, [phase, secret]);
 
   useEffect(() => {
-    if (!sessionId || phase !== "live") return;
-    const onLeave = () => {
-      const c = connRef.current;
-      leave(sessionId, c.kind === "idle" ? undefined : c.peerId);
-    };
+    if (!secret || phase !== "live") return;
+    const onLeave = () => leave(secret);
     window.addEventListener("pagehide", onLeave);
     window.addEventListener("beforeunload", onLeave);
     return () => {
       window.removeEventListener("pagehide", onLeave);
       window.removeEventListener("beforeunload", onLeave);
     };
-  }, [sessionId, phase]);
+  }, [secret, phase]);
 
   async function handleReady(lat: number, lng: number) {
-    myLocationRef.current = { lat, lng };
     // Show the user the offset position others see, not their exact spot.
-    setMyLocation(await join(sessionId, lat, lng));
+    const placed = await join(secret, lat, lng);
+    myLocationRef.current = placed;
+    setMyLocation(placed);
     setPhase("live");
   }
 

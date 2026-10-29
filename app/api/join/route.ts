@@ -1,49 +1,39 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyPrivacyOffset, isValidLatLng } from "@/lib/geo";
+import { badRequest, idFromSecret, readJson, unauthorized } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST /api/join — body { id, lat, lng } (raw coords).
-// Applies a 1–3 km privacy offset and upserts the presence row. Raw
-// coordinates are never stored.
+// POST /api/join - body { secret, lat, lng, rejoin? }.
+// First join: lat/lng are raw coords; a 1-3 km privacy offset is applied and
+// only the offset position is stored. Rejoin (after being reaped): the client
+// sends back the offset position it was given, which is stored as-is. Drawing
+// a fresh offset on every rejoin would let an observer average many offsets
+// back to the real location.
 export async function POST(request: NextRequest) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "invalid body" }, { status: 400 });
-  }
+  const body = await readJson(request);
+  if (!body) return badRequest("invalid body");
 
-  const { id, lat, lng } = (body ?? {}) as Record<string, unknown>;
+  const id = idFromSecret(body.secret);
+  if (!id) return unauthorized();
 
-  if (typeof id !== "string" || id.length < 8 || id.length > 64) {
-    return Response.json({ error: "invalid id" }, { status: 400 });
-  }
-  if (!isValidLatLng(lat, lng)) {
-    return Response.json({ error: "invalid coordinates" }, { status: 400 });
-  }
+  const { lat, lng } = body;
+  if (!isValidLatLng(lat, lng)) return badRequest("invalid coordinates");
 
-  const offset = applyPrivacyOffset(lat as number, lng as number);
+  const pos =
+    body.rejoin === true
+      ? { lat: lat as number, lng: lng as number }
+      : applyPrivacyOffset(lat as number, lng as number);
 
   await prisma.presence.upsert({
     where: { id },
-    create: {
-      id,
-      lat: offset.lat,
-      lng: offset.lng,
-      busy: false,
-      lastSeen: new Date(),
-    },
-    update: {
-      lat: offset.lat,
-      lng: offset.lng,
-      lastSeen: new Date(),
-    },
+    create: { id, ...pos, busy: false, lastSeen: new Date() },
+    update: { ...pos, lastSeen: new Date() },
   });
 
   // Return the offset position so the client shows the user where others
   // actually see them (never their exact location).
-  return Response.json({ ok: true, lat: offset.lat, lng: offset.lng });
+  return Response.json({ ok: true, ...pos });
 }
