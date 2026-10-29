@@ -1,9 +1,13 @@
+import { blurredCamera, type BlurredCamera } from "./blur";
+
 export type DescType = "offer" | "answer" | "ice";
 export type PeerControl =
   | "video-request"
   | "video-accept"
   | "video-decline"
-  | "video-end";
+  | "video-end"
+  | "video-reveal" // I'm ready to be seen clearly
+  | "video-blur"; // blur me again
 
 interface PeerCallbacks {
   onSignal: (type: DescType, payload: string) => void;
@@ -19,6 +23,8 @@ const CONTROLS: readonly string[] = [
   "video-accept",
   "video-decline",
   "video-end",
+  "video-reveal",
+  "video-blur",
 ];
 
 // The peer is an untrusted stranger: cap what they can push at us.
@@ -34,7 +40,9 @@ export class PeerSession {
   private readonly polite: boolean;
   private makingOffer = false;
   private ignoreOffer = false;
-  private localStream: MediaStream | null = null;
+  private camera: BlurredCamera | null = null;
+  // Outgoing video stays blurred until both sides have revealed.
+  private clear = false;
   private closed = false;
   private readonly cb: PeerCallbacks;
   private pendingCandidates: RTCIceCandidateInit[] = [];
@@ -160,22 +168,29 @@ export class PeerSession {
     }
   }
 
+  // Returns the stream actually being sent (blurred until both reveal).
   async startVideo(): Promise<MediaStream> {
-    if (!this.localStream) {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
+    if (!this.camera) {
+      const raw = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
-      for (const track of this.localStream.getTracks()) {
-        this.pc.addTrack(track, this.localStream);
-      }
+      this.clear = false;
+      this.camera = blurredCamera(raw, () => this.clear);
+      const { stream } = this.camera;
+      for (const track of stream.getTracks()) this.pc.addTrack(track, stream);
     }
-    return this.localStream;
+    return this.camera.stream;
+  }
+
+  setVideoClear(clear: boolean) {
+    this.clear = clear;
   }
 
   stopVideo() {
-    if (this.localStream) {
-      for (const track of this.localStream.getTracks()) track.stop();
+    if (this.camera) {
+      this.camera.stop();
+      this.clear = false;
       for (const sender of this.pc.getSenders()) {
         if (sender.track) {
           try {
@@ -183,7 +198,7 @@ export class PeerSession {
           } catch {}
         }
       }
-      this.localStream = null;
+      this.camera = null;
     }
   }
 
